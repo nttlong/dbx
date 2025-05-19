@@ -8,11 +8,86 @@ import (
 	"github.com/google/uuid"
 )
 
+type ISqlCommand interface {
+	String() string
+}
+
+//	type SqlCommand struct {
+//		ISqlCommand
+//		string
+//	}
+type SqlCommandCreateTable struct {
+	// SqlCommand
+	string
+	TableName string
+}
+type SqlCommandCreateIndex struct {
+	// SqlCommand
+	string
+	TableName string
+	IndexName string
+	Index     []*EntityField
+}
+type SqlCommandCreateUnique struct {
+	// SqlCommand
+	string
+	TableName string
+	IndexName string
+	Index     []*EntityField
+}
+type SqlCommandAddColumn struct {
+	// SqlCommand
+	string
+	TableName string
+	ColName   string
+}
+type SqlCommandForeignKey struct {
+	// SqlCommand
+	string
+	TableName string
+	ColName   []string
+	RefTable  []string
+	RefCol    []string
+}
+
+//	func (s SqlCommand) String() string {
+//		return s.string
+//	}
+func (s SqlCommandCreateTable) String() string {
+	return s.string
+}
+func (s SqlCommandAddColumn) String() string {
+	return s.string
+}
+func (s SqlCommandCreateIndex) String() string {
+	return s.string
+}
+func (s SqlCommandCreateUnique) String() string {
+	return s.string
+}
+func (s SqlCommandForeignKey) String() string {
+	return s.string
+}
+
+type SqlCommandList []ISqlCommand
 type IExecutor interface {
-	CreateInsertCommand(entity interface{}, tableInfo TableInfo) (*SqlWithParams, error)
-	CreatePostgresDbIfNotExist(ctx *sql.DB, dbName string, tenantDns string) error
-	GetTableInfoFormDb(ctx *sql.DB, dbName string) (*TableMapping, error)
-	CreateSqlMigrate(table TableInfo) []string
+	CreateTable(entity interface{}) func(db *sql.DB) error
+	createSqlCreateIndexIfNotExists(indexName string, tableName string, index []*EntityField) SqlCommandCreateIndex
+	createSqlCreateUniqueIndexIfNotExists(indexName string, tableName string, index []*EntityField) SqlCommandCreateUnique
+	makeSQlCreateTable(primaryKey []*EntityField, tableName string) SqlCommandCreateTable
+	makeAlterTableAddColumn(tableName string, field EntityField) SqlCommandAddColumn
+	getSQlCreateTable(entityType *EntityType) (SqlCommandList, error)
+	makeSqlCommandForeignKey(tableName string, colName []string, refTable []string, refCol []string) SqlCommandForeignKey
+}
+
+func (s *SqlCommandList) GetSqlCommandCreateTable() *SqlCommandCreateTable {
+	for _, cmd := range *s {
+		if cmd, ok := cmd.(SqlCommandCreateTable); ok {
+			return &cmd
+
+		}
+	}
+	return nil
 }
 
 type TableInfo struct {

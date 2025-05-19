@@ -1,4 +1,4 @@
-package testpkg_test
+package dbx
 
 import (
 	"time"
@@ -20,16 +20,17 @@ type Persons struct {
 }
 
 type Departments struct {
-	Id          int         `db:"pk;df:auto"`
-	Code        string      `db:"nvarchar(50);unique"`
-	Name        string      `db:"nvarchar(50);idx"`
-	ManagerId   *int        `db:"fk(Employees.EmployeeId)"`
-	Emps        []Employees `db:"fk:DepartmentId"`
-	ParentId    *int        `db:"fk(Departments.DepartmentId)"`
-	CreatedOn   time.Time   `db:"df:now();idx"`
-	CreatedBy   string      `db:"nvarchar(50);idx"`
-	UpdatedOn   *time.Time  `db:"idx"`
-	UpdatedBy   *string     `db:"idx"`
+	Emps      []Employees `db:"fk:DepartmentId"`
+	Id        int         `db:"pk;df:auto"`
+	Code      string      `db:"nvarchar(50);unique"`
+	Name      string      `db:"nvarchar(50);idx"`
+	ManagerId *int        `db:"fk(Employees.EmployeeId)"`
+
+	ParentId    *int       `db:"fk(Departments.DepartmentId)"`
+	CreatedOn   time.Time  `db:"df:now();idx"`
+	CreatedBy   string     `db:"nvarchar(50);idx"`
+	UpdatedOn   *time.Time `db:"idx"`
+	UpdatedBy   *string    `db:"idx"`
 	Description *string
 }
 type Employees struct {
@@ -40,5 +41,6 @@ type Employees struct {
 	PersonId     int    `db:"foreignkey(Persons.PersonId)"`
 	Title        string `db:"nvarchar(50)"`
 	BasicSalary  decimal.Decimal
-	DepartmentId int `db:"foreignkey(Departments.Id)"`
+	DepartmentId *int `db:"foreignkey(Departments.Id)"`
+	Crc32        int  `db:"auto"`
 }

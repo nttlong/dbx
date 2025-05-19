@@ -1,9 +1,13 @@
-package testpkg_test
+package dbx
 
 import (
+	"database/sql"
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
+	_ "github.com/lib/pq"
 	"github.com/nttlong/dbx"
 	_ "github.com/nttlong/dbx"
 	"github.com/stretchr/testify/assert"
@@ -27,24 +31,68 @@ func TestEntityType(t *testing.T) {
 
 }
 func TestGetAllFields(t *testing.T) {
-	entityType, err := dbx.CreateEntityType(reflect.TypeOf(&Employees{}))
+	entityType, err := dbx.CreateEntityType(reflect.TypeOf(&Departments{}))
+
 	assert.NoError(t, err)
-	fields, err := entityType.GetAllFields()
+	fields := entityType.EntityFields
+	for _, re := range entityType.RefEntities {
+		fmt.Println(re.Type)
+		fields := re.EntityFields
+		assert.NoError(t, err)
+		pkField := re.GetPrimaryKey()
+
+		assert.Equal(t, 15, len(fields))
+		assert.Equal(t, 1, len(pkField))
+		assert.Equal(t, "EmployeeId", pkField[0].Name)
+
+	}
 	assert.NoError(t, err)
-	assert.Equal(t, 14, len(fields))
-	pkField, err := entityType.GetPrimaryKey()
+	assert.Equal(t, 10, len(fields))
+	pkField := entityType.GetPrimaryKey()
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(pkField))
-	assert.Equal(t, "EmployeeId", pkField[0].Name)
-	fkCols, err := entityType.GetForeignKey()
+	assert.Equal(t, "Id", pkField[0].Name)
+	fkCols := entityType.GetForeignKey()
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(fkCols))
-	assert.Equal(t, "Persons.PersonId", fkCols[0].ForeignKey)
-	assert.Equal(t, "Departments.Id", fkCols[1].ForeignKey)
-	idx, err := entityType.GetIndex()
+	assert.Equal(t, "Employees.EmployeeId", fkCols[0].ForeignKey)
+	assert.Equal(t, "Departments.DepartmentId", fkCols[1].ForeignKey)
+	idx := entityType.GetIndex()
 	assert.NoError(t, err)
-	assert.Equal(t, 6, len(idx))
-	uk, err := entityType.GetUniqueKey()
+	assert.Equal(t, 5, len(idx))
+	uk := entityType.GetUniqueKey()
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(uk))
+	codeField := entityType.GetFieldByName("code")
+	assert.NotNil(t, codeField)
+	assert.Equal(t, "Code", codeField.Name)
+
+}
+func TestNewExecutorPostgres(t *testing.T) {
+	pdDns := "postgres://postgres:123456@localhost:5432/test001?sslmode=disable"
+	db, err := sql.Open("postgres", pdDns)
+	assert.NoError(t, err)
+	defer db.Close()
+	// TestGetAllFields(t)
+	exe := dbx.NewExecutorPostgres()
+
+	assert.NoError(t, err)
+	// start := time.Now()
+	// err = exe.CreateTable(&Employees{})(db)
+	// assert.NoError(t, err)
+	// fmt.Println("create table time:", time.Since(start).Milliseconds())
+	// start = time.Now()
+	// err = exe.CreateTable(&Employees{})(db)
+	// fmt.Println("create table time:", time.Since(start).Milliseconds())
+	// assert.NoError(t, err)
+	start := time.Now()
+	// et,err := dbx.CreateEntityType(&Departments{})
+	assert.NoError(t, err)
+
+	err = exe.CreateTable(&Departments{})(db)
+	fmt.Println("create table time:", time.Since(start).Milliseconds())
+	start = time.Now()
+	err = exe.CreateTable(&Departments{})(db)
+	fmt.Println("create table time:", time.Since(start).Milliseconds())
+
 }

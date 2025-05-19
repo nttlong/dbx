@@ -7,31 +7,120 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"google.golang.org/genproto/googleapis/type/decimal"
 )
 
 type EntityType struct {
 	reflect.Type
+	TableName    string
+	filedMap     sync.Map
+	RefEntities  []*EntityType
+	EntityFields []*EntityField
+	IsLoaded     bool
+	RefFields    []*EntityField
 }
 type EntityField struct {
 	reflect.StructField
 	AllowNull    bool
 	IsPrimaryKey bool
 
-	DefaultValue string
-	MaxLen       int
-	ForeignKey   string
-	IndexName    string
-	UkName       string
+	DefaultValue    string
+	MaxLen          int
+	ForeignKey      string
+	IndexName       string
+	UkName          string
+	NonPtrFieldType reflect.Type
 }
 
-var (
-	cacheEntityTypeAndFields = new(sync.Map)
-)
+func newEntityType(t reflect.Type) (*EntityType, error) {
+	//check cache
+
+	ret := EntityType{
+		Type:         t,
+		TableName:    t.Name(),
+		filedMap:     sync.Map{},
+		RefEntities:  []*EntityType{},
+		EntityFields: []*EntityField{},
+	}
+	fields, refTable := getAllFields(ret.Type)
+
+	ret.EntityFields = make([]*EntityField, 0)
+	for _, f := range fields {
+		nf := f.Type
+		if nf.Kind() == reflect.Ptr {
+			nf = nf.Elem()
+		}
+		if nf.Kind() == reflect.Slice {
+			nf = nf.Elem()
+		}
+		if nf.Kind() == reflect.Ptr {
+			nf = nf.Elem()
+		}
+
+		ef := EntityField{
+			StructField:     f,
+			AllowNull:       true,
+			NonPtrFieldType: nf,
+		}
+		err := ef.initPropertiesByTags()
+		if err != nil {
+			return nil, err
+		}
+
+		ret.EntityFields = append(ret.EntityFields, &ef)
+	}
+	for _, ref := range refTable {
+		refType := ref.Type
+		if refType.Kind() == reflect.Ptr {
+			refType = refType.Elem()
+		}
+		if refType.Kind() == reflect.Slice {
+			refType = refType.Elem()
+		}
+		if refType.Kind() == reflect.Ptr {
+			refType = refType.Elem()
+		}
+		refEntity, err := newEntityType(refType)
+		refEntity.RefFields = refEntity.GetPrimaryKey()
+		if err != nil {
+			return nil, err
+		}
+		ret.RefEntities = append(ret.RefEntities, refEntity)
+	}
+
+	return &ret, nil
+}
+
+// func newEntityType(t reflect.Type) *EntityType {
+
+// 	ret := &EntityType{
+// 		Type:         t,
+// 		TableName:    t.Name(),
+// 		filedMap:     sync.Map{},
+// 		RefEntity:    []*EntityType{},
+// 		EntityFields: []*EntityField{},
+// 	}
+// 	fields, err := ret.GetAllFields()
+// 	if err != nil {
+// 		panic(err)
+
+// 	}
+// 	ret.EntityFields = fields
+
+// 	return ret
+// }
 
 func (f *EntityField) initPropertiesByTags() error {
 	strTags := ";" + f.Tag.Get("db") + ";"
 	f.MaxLen = -1
-
+	ft := f.Type
+	if f.Type.Kind() == reflect.Ptr {
+		ft = f.Type.Elem()
+	}
+	f.NonPtrFieldType = ft
 	for k, v := range replacerConstraint {
 		for _, t := range v {
 
@@ -98,34 +187,56 @@ func (f *EntityField) initPropertiesByTags() error {
 			}
 			f.MaxLen = intLen
 		}
-		if strings.HasPrefix(tag, "nvachar(") && strings.HasSuffix(tag, ")") {
-			strLen := tag[8 : len(tag)-1]
+		if strings.HasPrefix(tag, "nvarchar(") && strings.HasSuffix(tag, ")") {
+			strLen := tag[9 : len(tag)-1]
 			intLen, err := strconv.Atoi(strLen)
 			if err != nil {
-				return fmt.Errorf("invalid vachar tag: %s", strTags)
+				return fmt.Errorf("invalid nvarchar tag: %s", strTags)
 			}
 			f.MaxLen = intLen
 		}
+
 	}
 	return nil
 
 }
-func (e EntityType) GetAllFields() ([]EntityField, error) {
+
+var hashCheckIsDbFieldAble = map[reflect.Type]bool{
+	reflect.TypeOf(int(0)):      true,
+	reflect.TypeOf(int8(0)):     true,
+	reflect.TypeOf(int16(0)):    true,
+	reflect.TypeOf(int32(0)):    true,
+	reflect.TypeOf(int64(0)):    true,
+	reflect.TypeOf(uint(0)):     true,
+	reflect.TypeOf(uint8(0)):    true,
+	reflect.TypeOf(uint16(0)):   true,
+	reflect.TypeOf(uint32(0)):   true,
+	reflect.TypeOf(uint64(0)):   true,
+	reflect.TypeOf(float32(0)):  true,
+	reflect.TypeOf(float64(0)):  true,
+	reflect.TypeOf(string("")):  true,
+	reflect.TypeOf(bool(false)): true,
+	reflect.TypeOf(time.Time{}): true,
+
+	reflect.TypeOf(decimal.Decimal{}): true,
+	reflect.TypeOf(uuid.UUID{}):       true,
+}
+
+func (e *EntityType) GetAllFieldsDelete() ([]*EntityField, error) {
+	// if e.IsLoaded {
+	// 	return e.EntityFields, nil
+	// }
 	//check cache
-	if fields, ok := cacheEntityTypeAndFields.Load(e); ok {
-		return fields.([]EntityField), nil
-	}
-	//get all fields
-	fields, err := getAllFields(e.Type)
-	if err != nil {
-		return nil, err
-	}
+
+	fields, refFields := getAllFields(e.Type)
+
 	// sort fields by field index
 	sort.Slice(fields, func(i, j int) bool {
 		return fields[i].Index[0] < fields[j].Index[0]
 	})
-	ret := make([]EntityField, 0)
+	ret := make([]*EntityField, 0)
 	for _, field := range fields {
+
 		ef := EntityField{
 			StructField: field,
 		}
@@ -133,87 +244,152 @@ func (e EntityType) GetAllFields() ([]EntityField, error) {
 		if err != nil {
 			return nil, err
 		}
-		ret = append(ret, ef)
+		ret = append(ret, &ef)
 	}
+	eRefEntity := make([]*EntityType, 0)
+	for _, field := range refFields {
+		ft := field.Type
+		if ft.Kind() == reflect.Ptr {
+			ft = ft.Elem()
+		}
+		if ft.Kind() == reflect.Slice {
+			ft = ft.Elem()
+		}
+		if ft.Kind() == reflect.Ptr {
+			ft = ft.Elem()
+		}
+		ef := EntityType{
+			Type:        ft,
+			TableName:   ft.Name(),
+			filedMap:    sync.Map{},
+			RefEntities: []*EntityType{},
+		}
+		eRefEntity = append(eRefEntity, &ef)
+
+	}
+	e.RefEntities = eRefEntity
 	//save to cache
-	cacheEntityTypeAndFields.Store(e, ret)
+	e.IsLoaded = true
 	return ret, nil
 }
-func (e EntityType) GetPrimaryKey() ([]EntityField, error) {
-	fields, err := e.GetAllFields()
-	if err != nil {
-		return nil, err
+
+var (
+	lockGetFieldByName sync.Map
+)
+
+func (e *EntityType) GetFieldByName(FieldName string) *EntityField {
+	//check cache
+	FieldName = strings.ToLower(FieldName)
+	if field, ok := e.filedMap.Load(FieldName); ok {
+		return field.(*EntityField)
 	}
-	ret := make([]EntityField, 0)
-	for _, field := range fields {
+
+	for _, f := range e.EntityFields {
+		if strings.EqualFold(f.Name, FieldName) {
+			e.filedMap.Store(FieldName, &f)
+			return f
+		}
+	}
+	return nil
+
+}
+
+func (e *EntityType) GetPrimaryKey() []*EntityField {
+
+	ret := make([]*EntityField, 0)
+	for _, field := range e.EntityFields {
 		if field.IsPrimaryKey {
 			ret = append(ret, field)
 		}
 	}
-	return ret, nil
+	return ret
 }
-func (e EntityType) GetForeignKey() ([]EntityField, error) {
-	fields, err := e.GetAllFields()
-	if err != nil {
-		return nil, err
-	}
-	ret := make([]EntityField, 0)
-	for _, field := range fields {
+func (e *EntityType) GetForeignKey() []*EntityField {
+
+	ret := make([]*EntityField, 0)
+	for _, field := range e.EntityFields {
 		if field.ForeignKey != "" {
 			ret = append(ret, field)
 		}
 	}
-	return ret, nil
+	return ret
+}
+func (e *EntityType) GetNonKeyFields() []EntityField {
+
+	ret := make([]EntityField, 0)
+	for _, field := range e.EntityFields {
+		if !field.IsPrimaryKey {
+			ret = append(ret, *field)
+		}
+	}
+	return ret
 }
 
 // get index return map[indexName]EntityField
-func (e EntityType) GetIndex() (map[string][]*EntityField, error) {
+func (e *EntityType) GetIndex() map[string][]*EntityField {
 	ret := map[string][]*EntityField{}
-	fields, err := e.GetAllFields()
-	if err != nil {
-		return nil, err
-	}
 
-	for _, field := range fields {
+	for _, field := range e.EntityFields {
 		if field.IndexName != "" {
 			//check if index already exist
 			if fields, ok := ret[field.IndexName]; ok {
-				fields = append(fields, &field)
+				fields = append(fields, field)
 				ret[field.IndexName] = fields
 			} else {
-				ret[field.IndexName] = []*EntityField{&field}
+				ret[field.IndexName] = []*EntityField{field}
 			}
 
 		}
 	}
-	return ret, nil
+	return ret
 }
-func (e EntityType) GetUniqueKey() (map[string][]*EntityField, error) {
+func (e *EntityType) GetUniqueKey() map[string][]*EntityField {
 	ret := map[string][]*EntityField{}
-	fields, err := e.GetAllFields()
-	if err != nil {
-		return nil, err
-	}
 
-	for _, field := range fields {
+	for _, field := range e.EntityFields {
 		if field.UkName != "" {
 			//check if index already exist
 			if fields, ok := ret[field.UkName]; ok {
-				fields = append(fields, &field)
+				fields = append(fields, field)
 				ret[field.UkName] = fields
 			} else {
-				ret[field.UkName] = []*EntityField{&field}
+				ret[field.UkName] = []*EntityField{field}
 			}
 
 		}
 	}
-	return ret, nil
+	return ret
 }
 
-func getAllFields(typ reflect.Type) ([]reflect.StructField, error) {
+type ForeignKeyInfo struct {
+	FromEntity *EntityType
+	FromFields []*EntityField
+	ToEntity   *EntityType
+	ToFields   []*EntityField
+}
+
+func (e *EntityType) GetForeignKeyRef() []*ForeignKeyInfo {
+	retList := []*ForeignKeyInfo{}
+	for _, refEntity := range e.RefEntities {
+		ret := ForeignKeyInfo{}
+		ret.FromEntity = refEntity
+		ret.ToEntity = e
+		ret.FromFields = refEntity.RefFields
+		ret.ToFields = e.GetPrimaryKey()
+		retList = append(retList, &ret)
+
+	}
+	return retList
+
+}
+
+// load all fields of the entity type, including embedded fields. all fields can be used for database operation.
+// @return all fields, all reference fields, error
+func getAllFields(typ reflect.Type) ([]reflect.StructField, []reflect.StructField) {
 	ret := make([]reflect.StructField, 0)
 	check := map[string]bool{}
 	anonymousFields := []reflect.StructField{}
+	refField := []reflect.StructField{}
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		if field.Anonymous {
@@ -221,17 +397,32 @@ func getAllFields(typ reflect.Type) ([]reflect.StructField, error) {
 
 			continue
 		} else {
+			ft := field.Type
+			if field.Type.Kind() == reflect.Ptr {
+				ft = field.Type.Elem()
+			}
+			if ft.Kind() == reflect.Slice {
+				ft = ft.Elem()
+			}
+			if field.Type.Kind() == reflect.Ptr {
+				ft = field.Type.Elem()
+			}
+			if _, ok := hashCheckIsDbFieldAble[ft]; !ok {
+				fmt.Println(reflect.TypeOf(ft))
+				fmt.Println(ft.Kind())
+				fmt.Println(field.Name)
+				refField = append(refField, field)
+				continue
+			}
 			check[field.Name] = true
 			ret = append(ret, field)
 		}
 	}
 	for _, field := range anonymousFields {
-		fields, err := getAllFields(field.Type)
-		if err != nil {
-			return nil, err
-		}
+		fields, _ := getAllFields(field.Type)
+
 		for _, f := range fields {
-			if _, ok := check[f.Name]; !ok {
+			if _, ok := check[f.Name]; !ok { //check if field is not exist
 				check[f.Name] = true
 				ret = append(ret, f)
 			}
@@ -239,8 +430,10 @@ func getAllFields(typ reflect.Type) ([]reflect.StructField, error) {
 		}
 	}
 
-	return ret, nil
+	return ret, refField
 }
+
+var cacheCreateEntityType sync.Map
 
 // Get all fields of the entity type, including embedded fields.
 func CreateEntityType(entity interface{}) (*EntityType, error) {
@@ -261,8 +454,19 @@ func CreateEntityType(entity interface{}) (*EntityType, error) {
 		if ft.Kind() != reflect.Struct { //in case of slice of non-struct
 			return nil, fmt.Errorf("entity type must be a struct or a slice of struct, but got %v", ft.Kind())
 		}
+		//check cache
+		if retEntity, ok := cacheCreateEntityType.Load(ft); ok {
+			return retEntity.(*EntityType), nil
+		}
 
-		return &EntityType{ft}, nil
+		retEntity, err := newEntityType(ft)
+		if err != nil {
+			return nil, err
+		}
+		//save to cache
+		cacheCreateEntityType.Store(ft, retEntity)
+
+		return retEntity, nil
 	}
 	typ := reflect.TypeOf(entity)
 	if typ.Kind() == reflect.Ptr { // in case of pointer
@@ -278,7 +482,17 @@ func CreateEntityType(entity interface{}) (*EntityType, error) {
 	if typ.Kind() != reflect.Struct { //in case of slice of non-struct
 		return nil, fmt.Errorf("entity type must be a struct or a slice of struct, but got %v", typ.Kind())
 	}
-	return &EntityType{typ}, nil
+	//check cache
+	if retEntity, ok := cacheCreateEntityType.Load(typ); ok {
+		return retEntity.(*EntityType), nil
+	}
+	ret, err := newEntityType(typ)
+	if err != nil {
+		return nil, err
+	}
+	//save to cache
+	cacheCreateEntityType.Store(typ, ret)
+	return ret, nil
 }
 
 var replacerConstraint = map[string][]string{
