@@ -44,10 +44,10 @@ type SqlCommandAddColumn struct {
 type SqlCommandForeignKey struct {
 	// SqlCommand
 	string
-	TableName string
-	ColName   []string
-	RefTable  []string
-	RefCol    []string
+	FromTable  string
+	FromFields []string
+	ToTable    string
+	ToFields   []string
 }
 
 //	func (s SqlCommand) String() string {
@@ -77,7 +77,7 @@ type IExecutor interface {
 	makeSQlCreateTable(primaryKey []*EntityField, tableName string) SqlCommandCreateTable
 	makeAlterTableAddColumn(tableName string, field EntityField) SqlCommandAddColumn
 	getSQlCreateTable(entityType *EntityType) (SqlCommandList, error)
-	makeSqlCommandForeignKey(tableName string, colName []string, refTable []string, refCol []string) SqlCommandForeignKey
+	makeSqlCommandForeignKey([]*ForeignKeyInfo) []*SqlCommandForeignKey
 }
 
 func (s *SqlCommandList) GetSqlCommandCreateTable() *SqlCommandCreateTable {

@@ -209,8 +209,36 @@ func (e *executorPostgres) createSqlCreateUniqueIndexIfNotExists(indexName strin
 		Index:     index,
 	}
 }
-func (e *executorPostgres) makeSqlCommandForeignKey([]*ForeignKeyInfo) []*SqlCommandForeignKey {
-	panic("not implemented") // TODO: Implement)
+func (e *executorPostgres) makeSqlCommandForeignKey(fkInfo []*ForeignKeyInfo) []*SqlCommandForeignKey {
+	/**
+	ALTER TABLE public."AAA"
+	ADD CONSTRAINT "AAA_DepartmentId_fkey" FOREIGN KEY ("DepartmentId")
+	*/
+	ret := []*SqlCommandForeignKey{}
+	for _, fk := range fkInfo {
+		fromFields := []string{}
+		for _, col := range fk.FromFields {
+			fromFields = append(fromFields, col.Name)
+		}
+		toFields := []string{}
+		for _, col := range fk.ToFields {
+			toFields = append(toFields, col.Name)
+		}
+		fkName := fk.FromEntity.Name() + "_" + strings.Join(fromFields, "_") + fk.ToEntity.Name() + "_" + strings.Join(toFields, "_") + "_fkey"
+		fromKey := "\"" + strings.Join(fromFields, "\",\"") + "\""
+		toKeys := "\"" + strings.Join(toFields, "\",\"") + "\""
+		sql := "ALTER TABLE \"" + fk.FromEntity.Name() + "\" ADD CONSTRAINT \"" + fkName + "\" FOREIGN KEY (" + fromKey + ") REFERENCES \"" + fk.ToEntity.Name() + "\" (" + toKeys + ") ON UPDATE CASCADE"
+		fmt.Print(sql)
+		ret = append(ret, &SqlCommandForeignKey{
+			string:     sql,
+			FromTable:  fk.FromEntity.Name(),
+			FromFields: fromFields,
+			ToTable:    fk.ToEntity.Name(),
+			ToFields:   toFields,
+		})
+	}
+
+	return ret
 }
 
 var red = "\033[0;31m"
