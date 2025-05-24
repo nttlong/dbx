@@ -18,6 +18,10 @@ type Persons struct {
 	FirstName string `db:"nvarchar(50);idx"`
 	LastName  string `db:"nvarchar(50);idx"`
 	Gender    bool
+	BirthDate time.Time
+	Address   string `db:"nvarchar(200)"`
+	Phone     string `db:"nvarchar(50)"`
+	Email     string `db:"nvarchar(50)"`
 }
 
 type Departments struct {

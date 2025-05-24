@@ -46,6 +46,7 @@ const (
 	Field
 	Alias
 	Function
+	FunctionArg
 	Params
 	OrderBy
 	Where
@@ -96,12 +97,13 @@ type DbDllCommand struct {
 	CommandText *string
 }
 type Node struct {
-	Nt     NodeType
-	V      string // Value of the node
-	C      []Node // Children of the node
-	Offset string
-	Limit  string
-	Un     *UsingNodeOnDelete
+	Nt         NodeType
+	V          string // Value of the node
+	C          []Node // Children of the node
+	Offset     string
+	Limit      string
+	Un         *UsingNodeOnDelete
+	IsResolved bool // If the node is resolved
 }
 
 // type DbDmlCmds []*DbDmlCommand
@@ -1161,20 +1163,31 @@ func (w Compiler) walkOnTable(expr sqlparser.TableExprs, ctx *ParseContext) (str
 	return strings.Join(ret, ", "), nil
 }
 func (w Compiler) walkOnFuncExpr(expr *sqlparser.FuncExpr, ctx *ParseContext) (string, error) {
-	funcName := expr.Name.String()
-	n, err := w.OnParse(Node{Nt: Function, V: funcName})
-	if err != nil {
-		return "", err
-	}
-	params := []string{}
+
+	// params := []string{}
+	args := []Node{}
 	for _, p := range expr.Exprs {
 		s, err := w.walkSQLNode(p, ctx)
 		if err != nil {
 			return "", err
 		}
-		params = append(params, s)
+		args = append(args, Node{Nt: FunctionArg, V: s})
 	}
-	return n.V + "(" + strings.Join(params, ", ") + ")", nil
+	funcName := expr.Name.String()
+
+	n, err := w.OnParse(Node{Nt: Function, V: funcName, C: args})
+	if err != nil {
+		return "", err
+	}
+	if n.IsResolved {
+		return n.V, nil
+
+	}
+	Params := []string{}
+	for _, p := range n.C {
+		Params = append(Params, p.V)
+	}
+	return n.V + "(" + strings.Join(Params, ", ") + ")", nil
 }
 func (ctx *ParseContext) findTableByAlias(alias string) string {
 	cGroup := ctx.groupWithAs()
@@ -1507,11 +1520,17 @@ func (w Compiler) OnParse(node Node) (Node, error) {
 
 }
 func (w Compiler) OnParseFunction(node Node) (Node, error) {
-	if node.V == "now" {
+	functionName := strings.ToLower(node.V)
+	if functionName == "now" {
 		node.V = "NOW()"
 	}
-	if strings.ToLower(node.V) == "len" {
+	if functionName == "len" {
 		node.V = "LENGTH"
+	}
+	if functionName == "year" || functionName == "month" || functionName == "day" || functionName == "hour" || functionName == "minute" || functionName == "second" {
+		upperFunctionName := strings.ToUpper(functionName)
+		v := fmt.Sprintf("EXTRACT(%s FROM %s)", upperFunctionName, node.C[0].V)
+		return Node{Nt: Function, V: v, IsResolved: true}, nil
 	}
 	return node, nil
 

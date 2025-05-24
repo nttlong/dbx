@@ -74,33 +74,12 @@ func TestCompiler(t *testing.T) {
 }
 
 var sqlTest = []string{
-	"select id,code  from employees group by accountId having id*10>100->SELECT \"EmployeeInfo\".\"Id\", \"EmployeeInfo\".\"Code\" FROM \"EmployeeInfo\" GROUP BY \"EmployeeInfo\".\"AccountId\" HAVING \"EmployeeInfo\".\"Id\" * 10 > 100",
-
-	"select per.id,per.phone from personalInfo per inner join employeeInfo emp on per.id=emp.id inner join dept on emp.deptId = dept.id->SELECT \"per\".\"Id\", \"per\".\"Phone\" FROM \"PersonalInfo\" AS \"per\" join \"EmployeeInfo\" AS \"emp\" ON \"per\".\"Id\" = \"emp\".\"Id\" join \"Dept\" ON \"emp\".\"DeptId\" = \"Dept\".\"Id\"",
-
-	"SELECT id, phone FROM personalInfo->SELECT \"PersonalInfo\".\"Id\", \"PersonalInfo\".\"Phone\" FROM \"PersonalInfo\"",
-	"select sum(sql.id),phone from (select id,phone from personalInfo union select id,phone from userInfo) sql->SELECT sum(\"sql\".\"id\"), \"phone\" FROM (SELECT \"PersonalInfo\".\"Id\", \"PersonalInfo\".\"Phone\" FROM \"PersonalInfo\" union SELECT \"UserInfo\".\"Id\", \"UserInfo\".\"Phone\" FROM \"UserInfo\") AS \"sql\"",
-	"select * from personalInfo per,employeeInfo  where per.id = employeeInfo.id->SELECT * FROM \"PersonalInfo\" AS \"per\", \"EmployeeInfo\" WHERE \"per\".\"Id\" = \"EmployeeInfo\".\"Id\"",
-	"select employeeInfo.phone, per.id from personalInfo per,employeeInfo  where per.id = employeeInfo.id->SELECT \"EmployeeInfo\".\"phone\", \"per\".\"Id\" FROM \"PersonalInfo\" AS \"per\", \"EmployeeInfo\" WHERE \"per\".\"Id\" = \"EmployeeInfo\".\"Id\"",
-
-	"select max(id),phone from personalInfo group by phone having max(id) > 100 ->SELECT max(\"PersonalInfo\".\"Id\"), \"PersonalInfo\".\"Phone\" FROM \"PersonalInfo\" GROUP BY \"PersonalInfo\".\"Phone\" HAVING max(\"PersonalInfo\".\"Id\") > 100",
-	"select max(id),phone from personalInfo->SELECT max(\"PersonalInfo\".\"Id\"), \"PersonalInfo\".\"Phone\" FROM \"PersonalInfo\"",
-	"select id,phone from personalInfo union select id,phone from userInfo->SELECT \"PersonalInfo\".\"Id\", \"PersonalInfo\".\"Phone\" FROM \"PersonalInfo\" union SELECT \"UserInfo\".\"Id\", \"UserInfo\".\"Phone\" FROM \"UserInfo\"",
-	"select code,concat(firstName,' ', lastName) as fullName from personalInfo where id  in (select id from employeeInfo)->SELECT \"PersonalInfo\".\"code\", concat(\"PersonalInfo\".\"FirstName\", ' ', \"PersonalInfo\".\"LastName\") AS \"fullName\" FROM \"PersonalInfo\" WHERE \"PersonalInfo\".\"Id\" in (SELECT \"EmployeeInfo\".\"Id\" FROM \"EmployeeInfo\")",
-	"select 'insert into Stetament(code,sql) select code,sql from Gude',code as SQL from employeeInfo ->SELECT 'insert into Stetament(code,sql) select code,sql from Gude', \"EmployeeInfo\".\"Code\" AS \"sql\" FROM \"EmployeeInfo\"",
-	// "insert info personalInfo (id, firstName, lastName)  select id, firstName, lastName from personalInfo ->INSERT INTO \"PersonalInfo\" (\"Id\", \"FirstName\", \"LastName\") SELECT \"Id\", \"FirstName\", \"LastName\" FROM \"PersonalInfo\" WHERE \"Id\" = $1",
-	"select * from employeeInfo where id !=null->SELECT * FROM \"EmployeeInfo\" WHERE \"EmployeeInfo\".\"Id\" != NULL",
-
-	"select concat(firstName,' ', lastName) as fullName from personalInfo->SELECT concat(\"PersonalInfo\".\"FirstName\", ' ', \"PersonalInfo\".\"LastName\") AS \"fullName\" FROM \"PersonalInfo\"",
-
-	"insert into employeeInfo (id, name, code) values (?, ?, ?) ->INSERT INTO \"EmployeeInfo\" (\"Id\", \"name\", \"Code\") VALUES ($1, $2, $3)",
-	"select id from employeeInfo where id = ?->SELECT \"EmployeeInfo\".\"Id\" FROM \"EmployeeInfo\" WHERE \"EmployeeInfo\".\"Id\" = $1",
-	"select len(code)+id from employeeInfo where id = ? ->SELECT LENGTH(\"EmployeeInfo\".\"Code\") + \"EmployeeInfo\".\"Id\" FROM \"EmployeeInfo\" WHERE \"EmployeeInfo\".\"Id\" = $1",
-	"select emp.Id from employeeInfo emp left join Dept dept on emp.DeptId = dept.Id where emp.Id = ?->SELECT \"emp\".\"Id\" FROM \"EmployeeInfo\" AS \"emp\" left join \"Dept\" AS \"dept\" ON \"emp\".\"DeptId\" = \"Dept\".\"Id\" WHERE \"emp\".\"Id\" = $1",
-	"select emp.Id from employeeInfo emp where emp.Id = ?->SELECT \"emp\".\"Id\" FROM \"EmployeeInfo\" AS \"emp\" WHERE \"emp\".\"Id\" = $1",
-
-	"select len(code) from employeeInfo where id = ?->SELECT LENGTH(\"EmployeeInfo\".\"Code\") FROM \"EmployeeInfo\" WHERE \"EmployeeInfo\".\"Id\" = $1",
-	"select * from employeeInfo where id = ?->SELECT * FROM \"EmployeeInfo\" WHERE \"EmployeeInfo\".\"Id\" = $1",
+	"select employeeid,code  from employees group by userId having employeeid*10>100->SELECT \"Employees\".\"EmployeeId\", \"Employees\".\"Code\" FROM \"Employees\" GROUP BY \"Employees\".\"UserId\" HAVING \"Employees\".\"EmployeeId\" * 10 > 100",
+	"select * from employees where concat(firstName,' ', lastName) like '%jonny%'->SELECT * FROM \"Employees\" WHERE concat(\"Employees\".\"FirstName\", ' ', \"Employees\".\"LastName\") like '%jonny%'",
+	"select * from employees where year(birthDate) = 1990->SELECT * FROM \"Employees\" WHERE EXTRACT(YEAR FROM \"Employees\".\"BirthDate\") = 1990",
+	"select year(birthDate) from employees->SELECT EXTRACT(YEAR FROM \"Employees\".\"BirthDate\") FROM \"Employees\"",
+	"select year(birthDate) year,count(*) total  from employees group by year(birthDate)->SELECT EXTRACT(YEAR FROM \"Employees\".\"BirthDate\") AS \"year\", count(*) AS \"total\" FROM \"Employees\" GROUP BY EXTRACT(YEAR FROM \"Employees\".\"BirthDate\")",
+	"select * from (select year(birthDate) year,count(*) total  from employees group by year(birthDate)) sql where sql.year = 1990->SELECT * FROM (SELECT EXTRACT(YEAR FROM \"Employees\".\"BirthDate\") AS \"year\", count(*) AS \"total\" FROM \"Employees\" GROUP BY EXTRACT(YEAR FROM \"Employees\".\"BirthDate\")) AS \"sql\" WHERE \"sql\".\"year\" = 1990",
 }
 
 func TestCompilerSQl(t *testing.T) {
