@@ -257,13 +257,13 @@ func (e *executorPostgres) createDb(dbName string) func(dbMaster DBX, dbTenant D
 		sqlCreateTable := "CREATE DATABASE  \"" + dbName + "\""
 		sqlEnableCitext := "CREATE EXTENSION IF NOT EXISTS citext"
 		var exists bool
-		err := dbMaster.QueryRow(sqlCheckDb, dbName).Scan(&exists)
+		err := dbMaster.DB.QueryRow(sqlCheckDb, dbName).Scan(&exists)
 
 		if err != nil {
 			return err
 		}
 		if !exists {
-			_, err := dbMaster.Exec(sqlCreateTable)
+			_, err := dbMaster.DB.Exec(sqlCreateTable)
 			if err != nil {
 				if pqErr, ok := err.(*pq.Error); ok && (pqErr.Code == "42P04" || pqErr.Code == "42704") {
 					return nil
@@ -278,7 +278,7 @@ func (e *executorPostgres) createDb(dbName string) func(dbMaster DBX, dbTenant D
 			return err
 		}
 		defer dbTenant.Close()
-		_, err = dbTenant.Exec(sqlEnableCitext)
+		_, err = dbTenant.DB.Exec(sqlEnableCitext)
 		if err != nil {
 			return err
 		}

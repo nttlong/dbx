@@ -2,6 +2,7 @@ package dbx
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"reflect"
 )
@@ -37,15 +38,22 @@ func (c *Cfg) dns(dbname string) string {
 
 }
 
+type ICompiler interface {
+	Parse(sql string) (string, error)
+}
 type DBX struct {
 	*sql.DB
 	cfg      Cfg
 	dns      string
 	executor IExecutor
+	compiler ICompiler
 }
 type DBXTenant struct {
 	DBX
 	TenantDbName string
+}
+type Rows struct {
+	*sql.Rows
 }
 
 func NewDBX(cfg Cfg) *DBX {
@@ -106,6 +114,145 @@ func (dbx DBX) GetTenant(dbName string) (*DBXTenant, error) {
 		}
 
 	}
+	if dbx.cfg.Driver == "postgres" {
+	} else {
+		panic(fmt.Errorf("unsupported driver %s in DBX.GetTenant()", dbx.cfg.Driver))
+	}
+
+	dbTenant.compiler = newCompilerPostgres(dbName, dbTenant.DB)
 
 	return &dbTenant, nil
+}
+
+func (dbx *DBXTenant) Exec(query string, args ...interface{}) (sql.Result, error) {
+	sqlExec, err := dbx.compiler.Parse(query)
+	if err != nil {
+		return nil, err
+	}
+	return dbx.DB.Exec(sqlExec, args...)
+}
+func (dbx *DBXTenant) Query(query string, args ...interface{}) (*Rows, error) {
+	sqlQuery, err := dbx.compiler.Parse(query)
+	if err != nil {
+		return nil, err
+	}
+	ret, err := dbx.DB.Query(sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	return &Rows{ret}, nil
+}
+func (dbx *DBXTenant) QueryRow(query string, args ...interface{}) *sql.Row {
+	sqlQuery, err := dbx.compiler.Parse(query)
+	if err != nil {
+		return nil
+	}
+	return dbx.DB.QueryRow(sqlQuery, args...)
+}
+func (r *Rows) Scan(dest interface{}) error {
+	return scanRowToStruct(r.Rows, dest)
+}
+func (r *Rows) ToMap() []map[string]interface{} {
+	cols, err := r.Rows.Columns()
+	if err != nil {
+		// Nên xử lý lỗi tốt hơn là chỉ trả về nil
+		return nil
+	}
+
+	count := len(cols)
+	values := make([]interface{}, count)
+	valuePtrs := make([]interface{}, count)
+	for i := range values {
+		valuePtrs[i] = &values[i]
+	}
+
+	result := make([]map[string]interface{}, 0)
+
+	for r.Rows.Next() {
+		err = r.Rows.Scan(valuePtrs...)
+		if err != nil {
+			return nil // Nên xử lý lỗi
+		}
+
+		row := make(map[string]interface{})
+		for i, col := range cols {
+			var v interface{}
+			val := values[i] // Lấy giá trị đã scan
+
+			// --- Bắt đầu phần sửa đổi ---
+			// Kiểm tra xem giá trị có phải là []byte không
+			if b, ok := val.([]byte); ok {
+				// Nếu đúng, chuyển đổi thành string
+				v = string(b)
+			} else {
+				// Nếu không, giữ nguyên giá trị gốc
+				v = val
+			}
+			// --- Kết thúc phần sửa đổi ---
+
+			row[col] = v // Gán giá trị đã xử lý vào map
+		}
+		result = append(result, row)
+	}
+
+	// Kiểm tra lỗi sau vòng lặp Next (quan trọng)
+	if err = r.Rows.Err(); err != nil {
+		// Xử lý lỗi từ Rows.Err()
+		return nil
+	}
+
+	return result
+}
+func (r *Rows) ToJSON() (string, error) {
+	m := r.ToMap()
+	if len(m) == 0 {
+		return "[]", nil
+	}
+	bff, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(bff), nil
+}
+
+func scanRowToStruct(rows *sql.Rows, dest interface{}) error {
+	destType := reflect.TypeOf(dest)
+	destValue := reflect.ValueOf(dest)
+
+	if destType.Kind() != reflect.Ptr || destValue.IsNil() {
+		return fmt.Errorf("destination must be a non-nil pointer to a struct")
+	}
+
+	structType := destType.Elem()
+	if structType.Kind() != reflect.Struct {
+		return fmt.Errorf("destination must be a pointer to a struct")
+	}
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+
+	scanArgs := make([]interface{}, len(columns))
+	fields := make([]reflect.Value, len(columns))
+
+	for i, col := range columns {
+		field := destValue.Elem().FieldByName(col)
+		// chac chan la tim duoc vi sau sql select duoc sinh ra tu cac field cua struct
+		if field.IsValid() && field.CanSet() {
+			fields[i] = field
+			scanArgs[i] = field.Addr().Interface()
+		} else {
+			// Nếu không tìm thấy field phù hợp, vẫn cần một nơi để scan giá trị
+			var dummy interface{}
+			scanArgs[i] = &dummy
+		}
+	}
+
+	err = rows.Scan(scanArgs...)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

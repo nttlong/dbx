@@ -89,6 +89,7 @@ type ParseContext struct {
 	Alias     string
 	SqlType   SqlTypeEnum
 	Owner     Compiler
+	Original  sqlparser.Statement
 }
 
 type TableMap map[string]string
@@ -273,6 +274,7 @@ func (w Compiler) parse(sql string) (string, error) {
 	}
 	sql = " " + sql
 	stm, err := sqlparser.Parse(sql)
+	parseCtx.Original = stm
 	if err != nil {
 		return "", err
 	}
@@ -1174,7 +1176,21 @@ func (w Compiler) walkOnFuncExpr(expr *sqlparser.FuncExpr, ctx *ParseContext) (s
 		args = append(args, Node{Nt: FunctionArg, V: s})
 	}
 	funcName := expr.Name.String()
+	if strings.ToLower(funcName) == "row_number" {
+		if selectStm, ok := ctx.Original.(*sqlparser.Select); ok {
+			if selectStm.OrderBy != nil {
+				strOrderBy, err := w.walkOnOrderBy(&selectStm.OrderBy, ctx)
+				selectStm.OrderBy = nil
+				if err != nil {
+					return "", err
+				} else {
+					return "ROW_NUMBER() OVER (ORDER BY " + strOrderBy + ")", nil
+				}
+			}
+		}
+		return "", fmt.Errorf("row_number require order by")
 
+	}
 	n, err := w.OnParse(Node{Nt: Function, V: funcName, C: args})
 	if err != nil {
 		return "", err
@@ -1521,6 +1537,10 @@ func (w Compiler) OnParse(node Node) (Node, error) {
 }
 func (w Compiler) OnParseFunction(node Node) (Node, error) {
 	functionName := strings.ToLower(node.V)
+	if functionName == "row_number" {
+		node.V = "ROW_NUMBER()"
+		return node, nil
+	}
 	if functionName == "now" {
 		node.V = "NOW()"
 	}

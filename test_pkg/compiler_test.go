@@ -12,6 +12,7 @@ import (
 
 var SqlCompiler dbx.Compiler
 var Red = "\033[31m"
+var Blue = "\033[34m"
 var Reset = "\033[0m"
 
 var DBX *dbx.DBX
@@ -74,7 +75,8 @@ func TestCompiler(t *testing.T) {
 }
 
 var sqlTest = []string{
-	"select employeeid,code  from employees group by userId having employeeid*10>100->SELECT \"Employees\".\"EmployeeId\", \"Employees\".\"Code\" FROM \"Employees\" GROUP BY \"Employees\".\"UserId\" HAVING \"Employees\".\"EmployeeId\" * 10 > 100",
+	"select row_number() stt,* from employees order by employeeid,createdOn->SELECT ROW_NUMBER() OVER (ORDER BY \"Employees\".\"EmployeeId\" ASC, \"Employees\".\"CreatedOn\" ASC) AS \"stt\", * FROM \"Employees\"",
+	"select employeeid,code  from employees group by employeeid having employeeid*10>100->SELECT \"Employees\".\"EmployeeId\", \"Employees\".\"Code\" FROM \"Employees\" GROUP BY \"Employees\".\"EmployeeId\" HAVING \"Employees\".\"EmployeeId\" * 10 > 100",
 	"select * from employees where concat(firstName,' ', lastName) like '%jonny%'->SELECT * FROM \"Employees\" WHERE concat(\"Employees\".\"FirstName\", ' ', \"Employees\".\"LastName\") like '%jonny%'",
 	"select * from employees where year(birthDate) = 1990->SELECT * FROM \"Employees\" WHERE EXTRACT(YEAR FROM \"Employees\".\"BirthDate\") = 1990",
 	"select year(birthDate) from employees->SELECT EXTRACT(YEAR FROM \"Employees\".\"BirthDate\") FROM \"Employees\"",
@@ -104,6 +106,43 @@ func TestCompilerSQl(t *testing.T) {
 		}
 		assert.Equal(t, sqlExpected, sqlResult)
 
+	}
+
+}
+func TestTestTenantDbExec(t *testing.T) {
+	TestDbxConnect(t)
+	TenantDb.Open()
+	for i, sql := range sqlTest {
+		sqlInput := strings.Split(sql, "->")[0]
+		// sqlExpected := strings.Split(sql, "->")[1]
+		_, err := TenantDb.Exec(sqlInput)
+		if err != nil {
+			fmt.Println(Red+"[", i, "]", sqlInput+Reset, err)
+		} else {
+			fmt.Println(Blue+"[", i, "]", sqlInput+Reset)
+		}
+	}
+
+}
+func TestTenantDbQuery(t *testing.T) {
+	TestDbxConnect(t)
+	TenantDb.Open()
+	for i, sql := range sqlTest {
+		sqlInput := strings.Split(sql, "->")[0]
+		// sqlExpected := strings.Split(sql, "->")[1]
+		rows, err := TenantDb.Query(sqlInput)
+		defer rows.Close()
+
+		if err != nil {
+			fmt.Println(Red+"[", i, "]", sqlInput+Reset, err)
+		}
+		strJSON, err := rows.ToJSON()
+		if err != nil {
+			fmt.Println(Red+"[", i, "]", sqlInput+Reset, err)
+		} else {
+			fmt.Println(Blue+"[", i, "]", sqlInput+Reset, strJSON)
+		}
+		fmt.Println(strJSON)
 	}
 
 }
