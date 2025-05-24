@@ -1,6 +1,8 @@
 package dbx
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"reflect"
 	"sort"
@@ -33,6 +35,7 @@ type EntityField struct {
 	IndexName       string
 	UkName          string
 	NonPtrFieldType reflect.Type
+	HashKey         string
 }
 
 func newEntityType(t reflect.Type) (*EntityType, error) {
@@ -84,6 +87,9 @@ func newEntityType(t reflect.Type) (*EntityType, error) {
 			refType = refType.Elem()
 		}
 		refEntity, err := newEntityType(refType)
+		if err != nil {
+			return nil, err
+		}
 		refEntityField := EntityField{
 			StructField: ref,
 		}
@@ -127,6 +133,12 @@ func newEntityType(t reflect.Type) (*EntityType, error) {
 // }
 
 func (f *EntityField) initPropertiesByTags() error {
+	if f.Type.Kind() == reflect.Ptr {
+		f.AllowNull = true
+	} else {
+		f.AllowNull = false
+	}
+
 	strTags := ";" + f.Tag.Get("db") + ";"
 	f.MaxLen = -1
 	ft := f.Type
@@ -210,6 +222,17 @@ func (f *EntityField) initPropertiesByTags() error {
 		}
 
 	}
+	strKey := `key_{{r.Name}}_{{strTags}}`
+	// sha256 content of strKey
+	hash := sha256.New()
+	_, err := hash.Write([]byte(strKey))
+	if err != nil {
+		return fmt.Errorf("Error writing to hash:", err)
+	}
+	hashBytes := hash.Sum(nil)
+	hashString := hex.EncodeToString(hashBytes)
+
+	f.HashKey = hashString
 	return nil
 
 }
@@ -421,7 +444,6 @@ func getAllFields(typ reflect.Type) ([]reflect.StructField, []reflect.StructFiel
 				ft = field.Type.Elem()
 			}
 			if _, ok := hashCheckIsDbFieldAble[ft]; !ok {
-				fmt.Print(field.Tag.Get("db"))
 
 				refField = append(refField, field)
 				continue
@@ -466,8 +488,9 @@ func CreateEntityType(entity interface{}) (*EntityType, error) {
 		if ft.Kind() != reflect.Struct { //in case of slice of non-struct
 			return nil, fmt.Errorf("entity type must be a struct or a slice of struct, but got %v", ft.Kind())
 		}
+		key := ft.PkgPath() + "-" + ft.Name()
 		//check cache
-		if retEntity, ok := cacheCreateEntityType.Load(ft); ok {
+		if retEntity, ok := cacheCreateEntityType.Load(key); ok {
 			return retEntity.(*EntityType), nil
 		}
 
@@ -494,8 +517,9 @@ func CreateEntityType(entity interface{}) (*EntityType, error) {
 	if typ.Kind() != reflect.Struct { //in case of slice of non-struct
 		return nil, fmt.Errorf("entity type must be a struct or a slice of struct, but got %v", typ.Kind())
 	}
+	key := typ.PkgPath() + "-" + typ.Name()
 	//check cache
-	if retEntity, ok := cacheCreateEntityType.Load(typ); ok {
+	if retEntity, ok := cacheCreateEntityType.Load(key); ok {
 		return retEntity.(*EntityType), nil
 	}
 	ret, err := newEntityType(typ)
@@ -503,7 +527,7 @@ func CreateEntityType(entity interface{}) (*EntityType, error) {
 		return nil, err
 	}
 	//save to cache
-	cacheCreateEntityType.Store(typ, ret)
+	cacheCreateEntityType.Store(key, ret)
 	return ret, nil
 }
 

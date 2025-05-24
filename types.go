@@ -71,7 +71,7 @@ func (s SqlCommandForeignKey) String() string {
 
 type SqlCommandList []ISqlCommand
 type IExecutor interface {
-	CreateTable(entity interface{}) func(db *sql.DB) error
+	createTable(dbName string, entity interface{}) func(db *sql.DB) error
 	createSqlCreateIndexIfNotExists(indexName string, tableName string, index []*EntityField) SqlCommandCreateIndex
 	createSqlCreateUniqueIndexIfNotExists(indexName string, tableName string, index []*EntityField) SqlCommandCreateUnique
 	makeSQlCreateTable(primaryKey []*EntityField, tableName string) SqlCommandCreateTable

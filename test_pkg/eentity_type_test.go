@@ -69,12 +69,11 @@ func TestGetAllFields(t *testing.T) {
 
 }
 func TestNewExecutorPostgres(t *testing.T) {
-	pdDns := "postgres://postgres:123456@localhost:5432/test001?sslmode=disable"
+	pdDns := "postgres://postgres:123456@localhost:5432/test_db__003?sslmode=disable"
 	db, err := sql.Open("postgres", pdDns)
 	assert.NoError(t, err)
 	defer db.Close()
 	// TestGetAllFields(t)
-	exe := dbx.NewExecutorPostgres()
 
 	assert.NoError(t, err)
 	// start := time.Now()
@@ -88,11 +87,12 @@ func TestNewExecutorPostgres(t *testing.T) {
 	start := time.Now()
 	// et,err := dbx.CreateEntityType(&Departments{})
 	assert.NoError(t, err)
+	dbx.MigrateEntity(db, "test_db__003", &Employees{})
 
-	err = exe.CreateTable(&Departments{})(db)
 	fmt.Println("create table time:", time.Since(start).Milliseconds())
 	start = time.Now()
-	err = exe.CreateTable(&Departments{})(db)
+	dbx.MigrateEntity(db, "test_db__003", &Departments{})
+
 	fmt.Println("create table time:", time.Since(start).Milliseconds())
 
 }
@@ -112,7 +112,7 @@ func TestDbx(t *testing.T) {
 	dbx.AddEntities(&Employees{}, &Departments{})
 	for i := 6; i <= 10; i++ {
 		start := time.Now()
-		db.GetTenant(fmt.Sprintf("test00%d", i))
+		db.GetTenant(fmt.Sprintf("testdb___00%d", i))
 		fmt.Println("get tenant time:", time.Since(start).Milliseconds())
 	}
 	// assert.NoError(t, err)

@@ -1,16 +1,19 @@
 package dbx
 
-import "reflect"
+import (
+	"reflect"
+)
 
 // struct manage all entities
 type entities struct {
 	// entities map[string]reflect.Type
-	entitiesTypes map[string]reflect.Type
+	entitiesTypes map[string]EntityType
 }
 
-func (e *entities) AddEntities(entities ...interface{}) {
+func (e *entities) AddEntities(entities ...interface{}) error {
 	for _, entity := range entities {
 		typ := reflect.TypeOf(entity)
+
 		if typ.Kind() == reflect.Ptr {
 			typ = typ.Elem()
 		}
@@ -21,20 +24,33 @@ func (e *entities) AddEntities(entities ...interface{}) {
 		if typ.Kind() == reflect.Ptr {
 			typ = typ.Elem()
 		}
-		e.entitiesTypes[typ.Name()] = typ
+		et, err := CreateEntityType(typ)
+		if err != nil {
+			return err
+		}
+
+		e.entitiesTypes[et.TableName] = *et
 	}
+	return nil
 
 }
 
 var _entities entities = entities{
-	entitiesTypes: make(map[string]reflect.Type),
+	entitiesTypes: map[string]EntityType{},
 }
 
-func AddEntities(entities ...interface{}) {
+func AddEntities(entities ...interface{}) error {
 	for _, entity := range entities {
-		_entities.AddEntities(entity)
+		err := _entities.AddEntities(entity)
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
-func (e *entities) GetEntities() map[string]reflect.Type {
+func GetEntities() map[string]EntityType {
+	return _entities.GetEntities()
+}
+func (e *entities) GetEntities() map[string]EntityType {
 	return e.entitiesTypes
 }

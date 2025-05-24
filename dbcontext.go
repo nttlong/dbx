@@ -3,6 +3,7 @@ package dbx
 import (
 	"database/sql"
 	"fmt"
+	"reflect"
 )
 
 type Cfg struct {
@@ -52,7 +53,7 @@ func NewDBX(cfg Cfg) *DBX {
 	ret := &DBX{cfg: cfg}
 	ret.dns = ret.cfg.dns("")
 	if cfg.Driver == "postgres" {
-		ret.executor = NewExecutorPostgres()
+		ret.executor = newExecutorPostgres()
 	} else {
 		panic(fmt.Errorf("unsupported driver %s", cfg.Driver))
 	}
@@ -97,8 +98,9 @@ func (dbx DBX) GetTenant(dbName string) (*DBXTenant, error) {
 	dbTenant.Open()
 	defer dbTenant.Close()
 	for _, e := range _entities.GetEntities() {
+		fmt.Println("entity", reflect.TypeOf(e).Name())
 
-		err = dbTenant.executor.CreateTable(e)(dbTenant.DB)
+		err = dbTenant.executor.createTable(dbName, e)(dbTenant.DB)
 		if err != nil {
 			return nil, err
 		}

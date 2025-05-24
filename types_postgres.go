@@ -17,7 +17,7 @@ import (
 type executorPostgres struct {
 }
 
-func NewExecutorPostgres() IExecutor {
+func newExecutorPostgres() IExecutor {
 
 	return &executorPostgres{}
 }
@@ -228,7 +228,7 @@ func (e *executorPostgres) makeSqlCommandForeignKey(fkInfo []*ForeignKeyInfo) []
 		fromKey := "\"" + strings.Join(fromFields, "\",\"") + "\""
 		toKeys := "\"" + strings.Join(toFields, "\",\"") + "\""
 		sql := "ALTER TABLE \"" + fk.FromEntity.Name() + "\" ADD CONSTRAINT \"" + fkName + "\" FOREIGN KEY (" + fromKey + ") REFERENCES \"" + fk.ToEntity.Name() + "\" (" + toKeys + ") ON UPDATE CASCADE"
-		fmt.Print(sql)
+
 		ret = append(ret, &SqlCommandForeignKey{
 			string:     sql,
 			FromTable:  fk.FromEntity.Name(),
@@ -296,14 +296,23 @@ var (
 	checkCreateTable sync.Map
 )
 
-func (e *executorPostgres) CreateTable(entity interface{}) func(db *sql.DB) error {
-	entityType, err := CreateEntityType(entity)
+func (e *executorPostgres) createTable(dbname string, entity interface{}) func(db *sql.DB) error {
+	var entityType *EntityType = nil
+	if _entityType, ok := entity.(*EntityType); ok {
+		entityType = _entityType
+	} else if _entityType, ok := entity.(EntityType); ok {
 
-	if err != nil {
-		return func(db *sql.DB) error { return err }
+		entityType = &_entityType
+	} else {
+		_entityType, err := CreateEntityType(entity)
+		if err != nil {
+			return func(db *sql.DB) error { return err }
+		}
+		entityType = _entityType
 	}
 
-	if _, ok := checkCreateTable.Load(entityType); ok {
+	key := dbname + entityType.PkgPath() + entityType.Name()
+	if _, ok := checkCreateTable.Load(key); ok {
 		return func(db *sql.DB) error { return nil }
 	}
 	sqlList, err := e.getSQlCreateTable(entityType)
@@ -321,24 +330,45 @@ func (e *executorPostgres) CreateTable(entity interface{}) func(db *sql.DB) erro
 
 				if pqErr, ok := err.(*pq.Error); ok {
 					if pqErr.Code == "42P07" || pqErr.Code == "42701" || pqErr.Code == "42710" {
+
 						continue
 					} else {
+						fmt.Println(red + "Error: " + reset + err.Error())
+						fmt.Println(red + "SQL: " + reset + sqlCmd.String())
 						return pqErr
 					}
 
+				} else {
+					fmt.Println(red + "Error: " + reset + err.Error())
+					fmt.Println(red + "SQL: " + reset + sqlCmd.String())
+
+					return err
 				}
 
-				fmt.Println(red + "Error: " + reset + err.Error())
-				fmt.Println(red + "SQL: " + reset + sqlCmd.String())
-
-				return err
 			}
-			fmt.Println(green + "SQL: " + reset + sqlCmd.String())
+
 		}
 		//save entityType to cache
-		checkCreateTable.Store(entityType, true)
+		checkCreateTable.Store(key, true)
 		return nil
 	}
 	return ret
+
+}
+
+func MigrateEntity(db *sql.DB, dbName string, entity interface{}) error {
+	if db == nil {
+		return fmt.Errorf("please open db first")
+	}
+	var executor IExecutor
+	driver := db.Driver()
+	if _, ok := driver.(*pq.Driver); ok {
+
+		executor = newExecutorPostgres()
+	} else {
+		return fmt.Errorf("unsupported driver %s", driver)
+	}
+	err := executor.createTable(dbName, entity)(db)
+	return err
 
 }
