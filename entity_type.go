@@ -84,7 +84,20 @@ func newEntityType(t reflect.Type) (*EntityType, error) {
 			refType = refType.Elem()
 		}
 		refEntity, err := newEntityType(refType)
-		refEntity.RefFields = refEntity.GetPrimaryKey()
+		refEntityField := EntityField{
+			StructField: ref,
+		}
+		err = refEntityField.initPropertiesByTags()
+
+		fkNameList := strings.Split(refEntityField.ForeignKey, ",")
+		for _, fkName := range fkNameList {
+			fx := refEntity.GetFieldByName(fkName)
+			if fx == nil {
+				return nil, fmt.Errorf("invalid foreign key: %s.%s tag in models %s is %s", refEntity.TableName, fkName, t.Name(), ref.Tag)
+			}
+			refEntity.RefFields = append(refEntity.RefFields, fx)
+		}
+
 		if err != nil {
 			return nil, err
 		}
@@ -408,9 +421,8 @@ func getAllFields(typ reflect.Type) ([]reflect.StructField, []reflect.StructFiel
 				ft = field.Type.Elem()
 			}
 			if _, ok := hashCheckIsDbFieldAble[ft]; !ok {
-				fmt.Println(reflect.TypeOf(ft))
-				fmt.Println(ft.Kind())
-				fmt.Println(field.Name)
+				fmt.Print(field.Tag.Get("db"))
+
 				refField = append(refField, field)
 				continue
 			}

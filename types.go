@@ -78,6 +78,7 @@ type IExecutor interface {
 	makeAlterTableAddColumn(tableName string, field EntityField) SqlCommandAddColumn
 	getSQlCreateTable(entityType *EntityType) (SqlCommandList, error)
 	makeSqlCommandForeignKey([]*ForeignKeyInfo) []*SqlCommandForeignKey
+	createDb(dbName string) func(dbMaster DBX, dbTenant DBXTenant) error
 }
 
 func (s *SqlCommandList) GetSqlCommandCreateTable() *SqlCommandCreateTable {

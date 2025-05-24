@@ -96,3 +96,27 @@ func TestNewExecutorPostgres(t *testing.T) {
 	fmt.Println("create table time:", time.Since(start).Milliseconds())
 
 }
+func TestDbx(t *testing.T) {
+	db := dbx.NewDBX(dbx.Cfg{
+		Driver:   "postgres",
+		Host:     "localhost",
+		Port:     5432,
+		User:     "postgres",
+		Password: "123456",
+		SSL:      false,
+	})
+	db.Open()
+	defer db.Close()
+	err := db.Ping()
+	assert.NoError(t, err)
+	dbx.AddEntities(&Employees{}, &Departments{})
+	for i := 6; i <= 10; i++ {
+		start := time.Now()
+		db.GetTenant(fmt.Sprintf("test00%d", i))
+		fmt.Println("get tenant time:", time.Since(start).Milliseconds())
+	}
+	// assert.NoError(t, err)
+	// dbTenant.Open()
+	// err = dbTenant.Ping()
+	// assert.NoError(t, err)
+}

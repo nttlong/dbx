@@ -241,6 +241,53 @@ func (e *executorPostgres) makeSqlCommandForeignKey(fkInfo []*ForeignKeyInfo) []
 	return ret
 }
 
+var checkCreateDb sync.Map
+
+func (e *executorPostgres) createDb(dbName string) func(dbMaster DBX, dbTenant DBXTenant) error {
+	if dbName == "" {
+		return func(dbMaster DBX, dbTenant DBXTenant) error { return fmt.Errorf("dbName is empty") }
+	}
+	// check if db exist
+	if _, ok := checkCreateDb.Load(dbName); ok {
+		return func(dbMaster DBX, dbTenant DBXTenant) error { return nil }
+	}
+
+	return func(dbMaster DBX, dbTenant DBXTenant) error {
+		sqlCheckDb := "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)"
+		sqlCreateTable := "CREATE DATABASE  \"" + dbName + "\""
+		sqlEnableCitext := "CREATE EXTENSION IF NOT EXISTS citext"
+		var exists bool
+		err := dbMaster.QueryRow(sqlCheckDb, dbName).Scan(&exists)
+
+		if err != nil {
+			return err
+		}
+		if !exists {
+			_, err := dbMaster.Exec(sqlCreateTable)
+			if err != nil {
+				if pqErr, ok := err.(*pq.Error); ok && (pqErr.Code == "42P04" || pqErr.Code == "42704") {
+					return nil
+				}
+
+				return err
+			}
+		}
+
+		err = dbTenant.Open()
+		if err != nil {
+			return err
+		}
+		defer dbTenant.Close()
+		_, err = dbTenant.Exec(sqlEnableCitext)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+}
+
 var red = "\033[0;31m"
 var green = "\033[0;32m"
 var yellow = "\033[0;33m"
@@ -265,13 +312,20 @@ func (e *executorPostgres) CreateTable(entity interface{}) func(db *sql.DB) erro
 	}
 	ret := func(db *sql.DB) error {
 
+		if db == nil {
+			return fmt.Errorf("please open db first")
+		}
 		for _, sqlCmd := range sqlList {
 			_, err := db.Exec(sqlCmd.String())
 			if err != nil {
 
-				if pqErr, ok := err.(*pq.Error); ok && (pqErr.Code == "42P07" || pqErr.Code == "42701") {
+				if pqErr, ok := err.(*pq.Error); ok {
+					if pqErr.Code == "42P07" || pqErr.Code == "42701" || pqErr.Code == "42710" {
+						continue
+					} else {
+						return pqErr
+					}
 
-					continue
 				}
 
 				fmt.Println(red + "Error: " + reset + err.Error())
