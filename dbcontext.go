@@ -44,6 +44,15 @@ func (c *Cfg) makeDnsMySql(dbname string) string {
 	}
 	return ret
 }
+func (c *Cfg) makeDnsMssql(dbname string) string {
+	ret := ""
+	if dbname == "" {
+		ret = fmt.Sprintf("sqlserver://%s:%s@%s:%d", c.User, c.Password, c.Host, c.Port)
+	} else {
+		ret = fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=%s", c.User, c.Password, c.Host, c.Port, dbname)
+	}
+	return ret
+}
 func (c *Cfg) dns(dbname string) string {
 
 	if c.Driver == "postgres" {
@@ -51,6 +60,8 @@ func (c *Cfg) dns(dbname string) string {
 		return c.makeDnsPostgres(dbname)
 	} else if c.Driver == "mysql" {
 		return c.makeDnsMySql(dbname)
+	} else if c.Driver == "mssql" {
+		return c.makeDnsMssql(dbname)
 	} else {
 		panic(fmt.Errorf("unsupported driver %s", c.Driver))
 	}
@@ -101,6 +112,9 @@ func NewDBX(cfg Cfg) *DBX {
 		ret.executor = newExecutorPostgres()
 	} else if cfg.Driver == "mysql" {
 		ret.executor = newExecutorMySql()
+	} else if cfg.Driver == "mssql" {
+		ret.executor = newExecutorMssql()
+
 	} else {
 		panic(fmt.Errorf("unsupported driver %s", cfg.Driver))
 	}

@@ -36,19 +36,24 @@ func (ctx *DBXTenant) Insert(entity interface{}) error {
 	if err != nil {
 		return err
 	}
+	if ctx.cfg.Driver == "postgres" {
+		return ctx.pgInsert(tblInfo, entity)
+	} else if ctx.cfg.Driver == "mysql" {
+		return fmt.Errorf("not support driver %s", ctx.cfg.Driver)
+		//return ctx.myInsert(tblInfo, entity)
+	} else {
+		return fmt.Errorf("not support driver %s", ctx.cfg.Driver)
+	}
+}
+
+func (ctx *DBXTenant) pgInsert(tblInfo *EntityType, entity interface{}) error {
+	err := postgresMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
+
+	if err != nil {
+		return err
+	}
 	dataInsert, err := createInsertCommand(entity, tblInfo)
 
-	if err != nil {
-		return err
-	}
-
-	if err != nil {
-		return err
-	}
-	if ctx.DB == nil {
-		return fmt.Errorf("please open TenantDbContext first")
-	}
-	// dbTableInfo, err := ctx.GetTableMappingFromDb()
 	if err != nil {
 		return err
 	}
@@ -72,8 +77,8 @@ func (ctx *DBXTenant) Insert(entity interface{}) error {
 	// resultArray := []interface{}{}
 	//ctx.Open()
 
-	fmt.Println(len(dataInsert.Params))
 	rw, err := ctx.DB.Query((*execSql2), dataInsert.Params...)
+
 	if err != nil {
 
 		return err
