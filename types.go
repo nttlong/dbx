@@ -79,6 +79,7 @@ type IExecutor interface {
 	getSQlCreateTable(entityType *EntityType) (SqlCommandList, error)
 	makeSqlCommandForeignKey([]*ForeignKeyInfo) []*SqlCommandForeignKey
 	createDb(dbName string) func(dbMaster DBX, dbTenant DBXTenant) error
+	quote(str ...string) string
 }
 
 func (s *SqlCommandList) GetSqlCommandCreateTable() *SqlCommandCreateTable {

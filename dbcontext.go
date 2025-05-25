@@ -76,6 +76,13 @@ type Rows struct {
 	*sql.Rows
 }
 
+func (dbx *DBX) GetExecutor() IExecutor {
+	return dbx.executor
+}
+func (dbx *DBX) GetCompiler() ICompiler {
+	return dbx.compiler
+}
+
 func NewDBX(cfg Cfg) *DBX {
 
 	ret := &DBX{cfg: cfg}
@@ -137,11 +144,11 @@ func (dbx DBX) GetTenant(dbName string) (*DBXTenant, error) {
 
 	}
 	if dbx.cfg.Driver == "postgres" {
+		dbTenant.compiler = newCompilerPostgres(dbName, dbTenant.DB)
 	} else {
-		panic(fmt.Errorf("unsupported driver %s in DBX.GetTenant()", dbx.cfg.Driver))
+		dbTenant.compiler = newCompilerMysql(dbName, dbTenant.DB)
 	}
-
-	dbTenant.compiler = newCompilerPostgres(dbName, dbTenant.DB)
+	dbTenant.TenantDbName = dbName
 
 	return &dbTenant, nil
 }

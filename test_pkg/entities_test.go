@@ -8,9 +8,9 @@ import (
 
 type BaseInfo struct {
 	CreatedOn   time.Time  `db:"df:now();idx"`
-	CreatedBy   string     `db:"nvarchar(50);idx"`
+	CreatedBy   string     `db:"varchar(50);idx"`
 	UpdatedOn   *time.Time `db:"idx"`
-	UpdatedBy   *string    `db:"idx"`
+	UpdatedBy   *string    `db:"varchar(50);idx"`
 	Description *string
 }
 type Persons struct {
@@ -34,7 +34,7 @@ type Departments struct {
 	CreatedOn   time.Time  `db:"df:now();idx"`
 	CreatedBy   string     `db:"nvarchar(50);idx"`
 	UpdatedOn   *time.Time `db:"idx"`
-	UpdatedBy   *string    `db:"idx"`
+	UpdatedBy   *string    `db:"nvarchar(50);idx"`
 	Description *string
 }
 type Users struct {

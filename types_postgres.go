@@ -47,6 +47,10 @@ var mapDefaultValueFuncToPg = map[string]string{
 	"auto":   "SERIAL",
 }
 
+func (e *executorPostgres) quote(str ...string) string {
+	return "\"" + strings.Join(str, "\",\"") + "\""
+
+}
 func (e *executorPostgres) makeSQlCreateTable(fields []*EntityField, tableName string) SqlCommandCreateTable {
 	/**
 		CREATE TABLE public."AAA"
