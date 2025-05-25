@@ -67,7 +67,7 @@ type WorkingDays struct {
 	EmployeeId int `db:"foreignkey(Employees.EmployeeId)"`
 }
 
-func main() {
+func main1() {
 	db := dbx.NewDBX(dbx.Cfg{
 		Driver:   "postgres",
 		Host:     "localhost",
@@ -88,7 +88,62 @@ func main() {
 	for i := 0; i < 1000; i++ {
 		emp := Employees{
 
-			Code:        fmt.Sprintf("EMP-0-%.8d", i),
+			Code:        fmt.Sprintf("EMP-1-%.8d", i),
+			BasicSalary: 1000000,
+			BaseInfo: BaseInfo{
+				CreatedOn:   time.Now(),
+				CreatedBy:   "test_user",
+				UpdatedOn:   nil,
+				UpdatedBy:   nil,
+				Description: nil,
+			},
+			Persons: Persons{
+				FirstName: "John",
+				LastName:  "Doe",
+				Gender:    true,
+				BirthDate: time.Now(),
+				Address:   "test_address",
+				Phone:     "test_phone",
+				Email:     "test_email",
+			},
+		}
+		start := time.Now()
+		err := TenantDb.Insert(&emp)
+		if err != nil {
+			fmt.Println(err)
+		}
+		n := time.Since(start).Milliseconds()
+		avg += n
+		fmt.Println("Elapse time in ms ", n)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+	}
+	fmt.Println("Average time in ms ", avg/int64(1000))
+}
+func main() {
+	db := dbx.NewDBX(dbx.Cfg{
+		Driver:   "mysql",
+		Host:     "localhost",
+		Port:     3306,
+		User:     "root",
+		Password: "123456",
+		SSL:      false,
+	})
+	db.Open()
+	defer db.Close()
+	TenantDb, err := db.GetTenant("tenant1")
+	if err != nil {
+		panic(err)
+	}
+	TenantDb.Open()
+	defer TenantDb.Close()
+	avg := int64(0)
+	for i := 0; i < 1000; i++ {
+		emp := Employees{
+
+			Code:        fmt.Sprintf("EMPF-%.8d", i),
 			BasicSalary: 1000000,
 			BaseInfo: BaseInfo{
 				CreatedOn:   time.Now(),

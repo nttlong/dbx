@@ -42,9 +42,9 @@ func (w CompilerMySql) parseInsertSQL(p parseInsertInfo) (*string, error) {
 		FROM products
 		WHERE product_id = @last_id;
 		*/
-		sqlSelectautoValueCols := "SELECT " + w.Quote.Quote(p.DefaultValueCols...) + " from " + w.Quote.Quote(p.TableName) + " where " + w.Quote.Quote(p.keyColsNames[0]) + " = LAST_INSERT_ID()"
+		sqlSelectautoValueCols := "SELECT " + w.Quote.Quote(p.keyColsNames[0]) + "," + w.Quote.Quote(p.DefaultValueCols...) + " from " + w.Quote.Quote(p.TableName) + " where " + w.Quote.Quote(p.keyColsNames[0]) + " = ?"
 		sqls = append(sqls, sqlSelectautoValueCols)
-		p.SqlInsert = strings.Join(sqls, ";")
+		p.SqlInsert = strings.Join(sqls, "\n")
 		return &p.SqlInsert, nil
 	}
 

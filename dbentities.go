@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -39,13 +40,130 @@ func (ctx *DBXTenant) Insert(entity interface{}) error {
 	if ctx.cfg.Driver == "postgres" {
 		return ctx.pgInsert(tblInfo, entity)
 	} else if ctx.cfg.Driver == "mysql" {
-		return fmt.Errorf("not support driver %s", ctx.cfg.Driver)
+		return ctx.mysqlInsert(tblInfo, entity)
 		//return ctx.myInsert(tblInfo, entity)
 	} else {
 		return fmt.Errorf("not support driver %s", ctx.cfg.Driver)
 	}
 }
+func (ctx *DBXTenant) mysqlInsert(tblInfo *EntityType, entity interface{}) error {
+	err := postgresMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
 
+	if err != nil {
+		return err
+	}
+	dataInsert, err := createInsertCommand(entity, tblInfo)
+
+	if err != nil {
+		return err
+	}
+
+	execSql, err := ctx.compiler.Parse(dataInsert.Sql)
+	if err != nil {
+		return err
+	}
+
+	execSql2, err := ctx.compiler.parseInsertSQL(parseInsertInfo{
+		TableName:        tblInfo.TableName,
+		DefaultValueCols: tblInfo.getDefaultValueColsNames(),
+		// ReturnColAfterInsert: tblInfo.autoValueColsName,
+		SqlInsert:    execSql,
+		keyColsNames: tblInfo.GetPrimaryKeyName(),
+	})
+	//.OnParseInsertSQL(walker, execSql, tblInfo.AutoValueColsName, []string{})
+	if err != nil {
+		return err
+	}
+	// resultArray := []interface{}{}
+	//ctx.Open()
+	sqlInsert := strings.Split(*execSql2, "\n")[0]
+	// sqlSelect := strings.Split(*execSql2, "\n")[1]
+	db := ctx.DB
+	// tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	// start := time.Now()
+	result, err := db.Exec(sqlInsert, dataInsert.Params...)
+	// fmt.Println("Insert time: ", time.Since(start).Milliseconds())
+	if err != nil {
+		// tx.Rollback()
+		return err
+	}
+	insertedId, err := result.LastInsertId()
+	if err != nil {
+		// tx.Rollback()
+		return err
+	}
+	v := reflect.ValueOf(entity)
+	if v.Kind() != reflect.Ptr || v.IsNil() {
+		return errors.New("entity must be a non-nil pointer")
+	}
+
+	v = v.Elem()
+	if v.Kind() != reflect.Struct {
+		return errors.New("entity must point to a struct")
+	}
+
+	idField := v.FieldByName(tblInfo.primaryKeyNames[0])
+	if !idField.IsValid() {
+		return errors.New("field 'Id' not found in struct")
+	}
+	if !idField.CanSet() {
+		return errors.New("cannot set 'Id' field")
+	}
+
+	switch idField.Kind() {
+	case reflect.Int, reflect.Int64:
+		idField.SetInt(insertedId)
+	default:
+		return fmt.Errorf("unsupported 'Id' field type: %s", idField.Kind())
+	}
+	// tx.Commit()
+	// start := time.Now()
+	// rw, err := db.Query(sqlSelect, insertedId)
+	// // n := time.Since(start).Milliseconds()
+	// // fmt.Println("Query: ", n)
+	// if err != nil {
+	// 	// tx.Rollback()
+	// 	return err
+	// }
+	// defer rw.Close()
+
+	// insertedId, err := result.LastInsertId()
+	// if err != nil {
+	// 	tx.Rollback()
+	// 	return err
+	// }
+	// start := time.Now()
+	// rw, err := tx.Query(sqlSelect, insertedId)
+	// // n := time.Since(start).Milliseconds()
+	// // fmt.Println("Query: ", n)
+	// if err != nil {
+	// 	tx.Rollback()
+	// 	return err
+	// }
+	// defer rw.Close()
+
+	// for rw.Next() {
+	// 	// start = time.Now()
+	// 	err := scanRowToStruct(rw, entity) // thay may cai vong lap o duoi ban ham nay chay OK
+	// 	// n = time.Since(start).Milliseconds()
+	// 	// fmt.Println("scanRowToStruct time: ", n)
+	// 	if err != nil {
+	// 		// tx.Rollback()
+	// 		return err
+	// 	}
+
+	// }
+
+	// // err = tx.Commit()
+	// if err != nil {
+	// 	return err
+	// }
+	return nil
+
+}
 func (ctx *DBXTenant) pgInsert(tblInfo *EntityType, entity interface{}) error {
 	err := postgresMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
 
