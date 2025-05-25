@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"google.golang.org/genproto/googleapis/type/decimal"
 )
 
 type BaseInfo struct {
@@ -49,9 +48,9 @@ type Employees struct {
 	EmployeeId int    `db:"pk;df:auto"`
 	Code       string `db:"nvarchar(50);unique"`
 	Persons
-	PersonId     int    `db:"foreignkey(Persons.PersonId)"`
+	//PersonId     int    `db:"foreignkey(Persons.PersonId)"`
 	Title        string `db:"nvarchar(50)"`
-	BasicSalary  decimal.Decimal
+	BasicSalary  float32
 	DepartmentId *int          `db:"foreignkey(Departments.Id)"`
 	Crc32        int           `db:"auto"`
 	WorkingDays  []WorkingDays `db:"fk:EmployeeId"`

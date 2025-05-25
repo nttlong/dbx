@@ -2,6 +2,7 @@ package dbx
 
 import (
 	"database/sql"
+	"strings"
 	"sync"
 )
 
@@ -32,4 +33,9 @@ func newCompilerPostgres(dbName string, db *sql.DB) *CompilerPostgres {
 	compilerPostgres.LoadDbDictionary(db)
 	compilerPostgresCache.Store(dbName, compilerPostgres)
 	return compilerPostgres
+}
+func (w CompilerPostgres) parseInsertSQL(sql string, autoValueCols []string, returnColAfterInsert []string) (*string, error) {
+	var returning = "returning " + "\"" + strings.Join(autoValueCols, "\",\"") + "\""
+	ret := sql + " " + returning
+	return &ret, nil
 }

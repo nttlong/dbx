@@ -22,7 +22,7 @@ func newExecutorPostgres() IExecutor {
 	return &executorPostgres{}
 }
 
-var mapGoTypeToPosgresType = map[reflect.Type]string{
+var mapGoTypeToPostgresType = map[reflect.Type]string{
 	reflect.TypeOf(int(0)):            "integer",
 	reflect.TypeOf(int8(0)):           "smallint",
 	reflect.TypeOf(int16(0)):          "smallint",
@@ -60,7 +60,7 @@ func (e *executorPostgres) makeSQlCreateTable(fields []*EntityField, tableName s
 	keyColsNames := make([]string, 0)
 	primaryStr := make([]string, 0)
 	for _, field := range fields {
-		fielType := mapGoTypeToPosgresType[field.Type]
+		fielType := mapGoTypeToPostgresType[field.Type]
 		if field.DefaultValue == "auto" {
 			fielType = "SERIAL"
 		}
@@ -107,7 +107,7 @@ func (e *executorPostgres) makeAlterTableAddColumn(tableName string, field Entit
 
 	}
 
-	sqlCmdCreateTableStr := "ALTER TABLE \"" + tableName + "\" ADD COLUMN \"" + field.Name + "\" " + mapGoTypeToPosgresType[field.NonPtrFieldType] + " " + isNotNull
+	sqlCmdCreateTableStr := "ALTER TABLE \"" + tableName + "\" ADD COLUMN \"" + field.Name + "\" " + mapGoTypeToPostgresType[field.NonPtrFieldType] + " " + isNotNull
 	if dfValue != "" {
 		sqlCmdCreateTableStr += " DEFAULT " + dfValue
 	}

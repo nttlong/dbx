@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nttlong/dbx"
 	"github.com/stretchr/testify/assert"
@@ -145,4 +146,42 @@ func TestTenantDbQuery(t *testing.T) {
 		fmt.Println(strJSON)
 	}
 
+}
+func TestInsert(t *testing.T) {
+	TestDbxConnect(t)
+	TenantDb.Open()
+	avg := int64(0)
+	for i := 20000; i < 50000; i++ {
+		emp := Employees{
+
+			Code:        fmt.Sprintf("EMP%.8d", i),
+			BasicSalary: 1000000,
+			BaseInfo: BaseInfo{
+				CreatedOn:   time.Now(),
+				CreatedBy:   "test_user",
+				UpdatedOn:   nil,
+				UpdatedBy:   nil,
+				Description: nil,
+			},
+			Persons: Persons{
+				FirstName: "John",
+				LastName:  "Doe",
+				Gender:    true,
+				BirthDate: time.Now(),
+				Address:   "test_address",
+				Phone:     "test_phone",
+				Email:     "test_email",
+			},
+		}
+		start := time.Now()
+		err := TenantDb.Insert(&emp)
+		n := time.Since(start).Milliseconds()
+		avg += n
+		fmt.Println("Elapse time in ms ", n)
+		if err != nil {
+			fmt.Println(err)
+		}
+		assert.NoError(t, err)
+	}
+	fmt.Println("Average time in ms ", avg/int64(50000-20000))
 }

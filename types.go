@@ -91,63 +91,66 @@ func (s *SqlCommandList) GetSqlCommandCreateTable() *SqlCommandCreateTable {
 	return nil
 }
 
-type TableInfo struct {
-	TableName              string
-	ColInfos               []ColInfo
-	Relationship           []*RelationshipInfo
-	MapCols                map[string]*ColInfo
-	AutoValueCols          map[string]*ColInfo
-	EntityType             reflect.Type
-	AutoValueColsName      []string
-	IsHasAutoValueColsName bool
-}
-type RelationshipInfo struct {
-	FromTable TableInfo
-	ToTable   TableInfo
-	FromCols  []ColInfo
-	ToCols    []ColInfo
-}
-type ColInfo struct {
-	Name          string
-	FieldType     reflect.StructField
-	Tag           string
-	IndexName     string
-	IsPrimary     bool
-	IsUnique      bool
-	IsIndex       bool
-	Len           int
-	AllowNull     bool
-	DefaultValue  string
-	IndexOnStruct int
-	FieldSt       reflect.StructField
-}
-type SqlWithParams struct {
+//	type TableInfo struct {
+//		TableName              string
+//		ColInfos               []ColInfo
+//		Relationship           []*RelationshipInfo
+//		MapCols                map[string]*ColInfo
+//		AutoValueCols          map[string]*ColInfo
+//		EntityType             reflect.Type
+//		AutoValueColsName      []string
+//		IsHasAutoValueColsName bool
+//	}
+//
+//	type RelationshipInfo struct {
+//		FromTable TableInfo
+//		ToTable   TableInfo
+//		FromCols  []ColInfo
+//		ToCols    []ColInfo
+//	}
+//
+//	type ColInfo struct {
+//		Name          string
+//		FieldType     reflect.StructField
+//		Tag           string
+//		IndexName     string
+//		IsPrimary     bool
+//		IsUnique      bool
+//		IsIndex       bool
+//		Len           int
+//		AllowNull     bool
+//		DefaultValue  string
+//		IndexOnStruct int
+//		FieldSt       reflect.StructField
+//	}
+type sqlWithParams struct {
 	Sql    string
 	Params []interface{}
 }
-type DbTableInfo struct {
-	TableName  string
-	ColInfos   map[string]string
-	EntityType reflect.Type
-}
-type TableMapping map[string]DbTableInfo
 
-func (t *TableMapping) String() string {
-	if t == nil {
-		return "nil"
-	}
-	ret := ""
-	for k, v := range *t {
-		ret += k + " : " + v.TableName + "\n"
-		for k1, v1 := range v.ColInfos {
-			ret += "\t" + k1 + " : " + v1 + "\n"
-		}
-	}
-	return ret
+//	type DbTableInfo struct {
+//		TableName  string
+//		ColInfos   map[string]string
+//		EntityType reflect.Type
+//	}
+// type TableMapping map[string]DbTableInfo
 
-}
+// func (t *TableMapping) String() string {
+// 	if t == nil {
+// 		return "nil"
+// 	}
+// 	ret := ""
+// 	for k, v := range *t {
+// 		ret += k + " : " + v.TableName + "\n"
+// 		for k1, v1 := range v.ColInfos {
+// 			ret += "\t" + k1 + " : " + v1 + "\n"
+// 		}
+// 	}
+// 	return ret
 
-var MapDefaultValueOfGoType = map[reflect.Type]interface{}{
+// }
+
+var mapDefaultValueOfGoType = map[reflect.Type]interface{}{
 	reflect.TypeOf(int(0)):      0,
 	reflect.TypeOf(int8(0)):     0,
 	reflect.TypeOf(int16(0)):    0,

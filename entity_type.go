@@ -17,12 +17,16 @@ import (
 
 type EntityType struct {
 	reflect.Type
-	TableName    string
-	filedMap     sync.Map
-	RefEntities  []*EntityType
-	EntityFields []*EntityField
-	IsLoaded     bool
-	RefFields    []*EntityField
+	TableName                    string
+	filedMap                     sync.Map
+	RefEntities                  []*EntityType
+	EntityFields                 []*EntityField
+	IsLoaded                     bool
+	RefFields                    []*EntityField
+	mapCols                      map[string]*EntityField
+	hasMapCols                   bool // map of field name to EntityField
+	autoValueColsName            []string
+	hasGenerateAutoValueColsName bool // list of field names that have auto value
 }
 type EntityField struct {
 	reflect.StructField
@@ -112,25 +116,6 @@ func newEntityType(t reflect.Type) (*EntityType, error) {
 
 	return &ret, nil
 }
-
-// func newEntityType(t reflect.Type) *EntityType {
-
-// 	ret := &EntityType{
-// 		Type:         t,
-// 		TableName:    t.Name(),
-// 		filedMap:     sync.Map{},
-// 		RefEntity:    []*EntityType{},
-// 		EntityFields: []*EntityField{},
-// 	}
-// 	fields, err := ret.GetAllFields()
-// 	if err != nil {
-// 		panic(err)
-
-// 	}
-// 	ret.EntityFields = fields
-
-// 	return ret
-// }
 
 func (f *EntityField) initPropertiesByTags() error {
 	if f.Type.Kind() == reflect.Ptr {
@@ -258,7 +243,7 @@ var hashCheckIsDbFieldAble = map[reflect.Type]bool{
 	reflect.TypeOf(uuid.UUID{}):       true,
 }
 
-func (e *EntityType) GetAllFieldsDelete() ([]*EntityField, error) {
+func (e *EntityType) getAllFieldsDelete() ([]*EntityField, error) {
 	// if e.IsLoaded {
 	// 	return e.EntityFields, nil
 	// }
@@ -395,6 +380,32 @@ func (e *EntityType) GetUniqueKey() map[string][]*EntityField {
 		}
 	}
 	return ret
+}
+
+func (e *EntityType) getAutoValueColsName() []string {
+	if !e.hasGenerateAutoValueColsName {
+		ret := []string{}
+		for _, field := range e.EntityFields {
+			if field.DefaultValue == "auto" {
+				ret = append(ret, field.Name)
+			}
+		}
+		e.autoValueColsName = ret
+		e.hasGenerateAutoValueColsName = true
+
+		return ret
+	}
+	return e.autoValueColsName
+}
+func (e *EntityType) getMapCols() map[string]*EntityField {
+	if !e.hasMapCols {
+		e.mapCols = make(map[string]*EntityField, 0)
+		for _, field := range e.EntityFields {
+			e.mapCols[field.Name] = field
+		}
+		e.hasMapCols = true
+	}
+	return e.mapCols
 }
 
 type ForeignKeyInfo struct {

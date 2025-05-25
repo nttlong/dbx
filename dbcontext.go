@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 type Cfg struct {
@@ -16,30 +18,48 @@ type Cfg struct {
 	SSL      bool
 }
 
-func (c *Cfg) dns(dbname string) string {
+func (c *Cfg) makeDnsPostgres(dbname string) string {
 	ret := ""
-	if c.Driver == "postgres" {
-		if c.SSL {
-			if dbname == "" {
-				ret = fmt.Sprintf("postgres://%s:%s@%s:%d", c.User, c.Password, c.Host, c.Port)
-			} else {
-				ret = fmt.Sprintf("postgres://%s:%s@%s:%d/%s", c.User, c.Password, c.Host, c.Port, dbname)
-			}
+	if c.SSL {
+		if dbname == "" {
+			ret = fmt.Sprintf("postgres://%s:%s@%s:%d", c.User, c.Password, c.Host, c.Port)
 		} else {
-			if dbname == "" {
-				ret = fmt.Sprintf("postgres://%s:%s@%s:%d?sslmode=disable", c.User, c.Password, c.Host, c.Port)
-			} else {
-				ret = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable", c.User, c.Password, c.Host, c.Port, dbname)
-			}
+			ret = fmt.Sprintf("postgres://%s:%s@%s:%d/%s", c.User, c.Password, c.Host, c.Port, dbname)
 		}
-		return ret
+	} else {
+		if dbname == "" {
+			ret = fmt.Sprintf("postgres://%s:%s@%s:%d?sslmode=disable", c.User, c.Password, c.Host, c.Port)
+		} else {
+			ret = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable", c.User, c.Password, c.Host, c.Port, dbname)
+		}
 	}
-	panic(fmt.Errorf("unsupported driver %s", c.Driver))
+	return ret
+}
+func (c *Cfg) makeDnsMySql(dbname string) string {
+	ret := ""
+	if dbname == "" {
+		ret = fmt.Sprintf("%s:%s@tcp(%s:%d)/", c.User, c.Password, c.Host, c.Port)
+	} else {
+		ret = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", c.User, c.Password, c.Host, c.Port, dbname)
+	}
+	return ret
+}
+func (c *Cfg) dns(dbname string) string {
+
+	if c.Driver == "postgres" {
+
+		return c.makeDnsPostgres(dbname)
+	} else if c.Driver == "mysql" {
+		return c.makeDnsMySql(dbname)
+	} else {
+		panic(fmt.Errorf("unsupported driver %s", c.Driver))
+	}
 
 }
 
 type ICompiler interface {
 	Parse(sql string) (string, error)
+	parseInsertSQL(sql string, autoValueCols []string, returnColAfterInsert []string) (*string, error)
 }
 type DBX struct {
 	*sql.DB
@@ -62,6 +82,8 @@ func NewDBX(cfg Cfg) *DBX {
 	ret.dns = ret.cfg.dns("")
 	if cfg.Driver == "postgres" {
 		ret.executor = newExecutorPostgres()
+	} else if cfg.Driver == "mysql" {
+		ret.executor = newExecutorMySql()
 	} else {
 		panic(fmt.Errorf("unsupported driver %s", cfg.Driver))
 	}
