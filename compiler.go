@@ -148,9 +148,10 @@ type QuoteIdentifier struct {
 	Right string
 }
 type Compiler struct {
-	TableDict map[string]DbTableDictionaryItem
-	FieldDict map[string]string
-	Quote     QuoteIdentifier
+	TableDict  map[string]DbTableDictionaryItem
+	FieldDict  map[string]string
+	Quote      QuoteIdentifier
+	OnCompiler func(c Compiler, node Node) (Node, error)
 
 	// Some RDBMS need special parse for insert sql
 
@@ -1116,6 +1117,8 @@ func (w Compiler) walkOnWhere(stmt *sqlparser.Where, ctx *ParseContext) (string,
 }
 func (w Compiler) walkOnTable(expr sqlparser.TableExprs, ctx *ParseContext) (string, error) {
 	ret := []string{}
+	//oldNodes := ctx.SqlNodes
+	ctx.SqlNodes = []sqlparser.SQLNode{}
 	for _, expr := range expr {
 		if tbl, ok := expr.(*sqlparser.AliasedTableExpr); ok {
 			var strTableName = ""
@@ -1468,94 +1471,14 @@ func (w Compiler) walkOnColIdent(expr sqlparser.ColIdent, ctx *ParseContext) (st
 }
 
 func (w Compiler) OnParse(node Node) (Node, error) {
-	if node.Nt == Value {
-		if v, ok := node.IsBool(); ok {
-			if v {
-				node.V = "TRUE"
-			} else {
-				node.V = "FALSE"
-			}
-		}
-		if _, ok := node.IsDate(); ok {
-			return node, nil
-		}
-		if _, ok := node.IsNumber(); ok {
-			return node, nil
-		}
-		//escape "'" in node.V
-		node.V = "'" + strings.Replace(node.V, "'", "''", -1) + "'"
-		return node, nil
+	if w.OnCompiler == nil {
+		panic("OnCompiler is nil, please set it by using Compiler.OnCompiler=???")
 	}
-	if node.Nt == TableName {
-		tableNameLower := strings.ToLower(node.V)
-		if matchTableName, ok := w.TableDict[tableNameLower]; ok {
-			node.V = w.Quote.Left + matchTableName.TableName + w.Quote.Right
-			return node, nil
-		} else {
-			node.V = w.Quote.Quote(node.V)
-			return node, nil
-		}
-	}
-	if node.Nt == Alias {
-		node.V = w.Quote.Left + node.V + w.Quote.Right
-		return node, nil
-	}
-	if node.Nt == Field {
-		fieldNameLower := strings.ToLower(node.V)
-
-		if matchField, ok := w.FieldDict[fieldNameLower]; ok {
-
-			if strings.Contains(matchField, ".") {
-				tableName := strings.Split(matchField, ".")[0]
-				fieldName := strings.Split(matchField, ".")[1]
-				node.V = w.Quote.Left + tableName + w.Quote.Right + "." + w.Quote.Left + fieldName + w.Quote.Right
-				return node, nil
-			}
-			node.V = w.Quote.Left + matchField + w.Quote.Right
-			return node, nil
-		} else {
-			if strings.Contains(node.V, ".") {
-				tableName := strings.Split(node.V, ".")[0]
-				fieldName := strings.Split(node.V, ".")[1]
-				node.V = w.Quote.Left + tableName + w.Quote.Right + "." + w.Quote.Left + fieldName + w.Quote.Right
-				return node, nil
-			}
-			node.V = w.Quote.Left + node.V + w.Quote.Right
-			return node, nil
-		}
-
-	}
-	if node.Nt == Params {
-		node.V = "$" + node.V[1:]
-	}
-	if node.Nt == Function {
-		return w.OnParseFunction(node)
-
-	}
-	return node, nil
+	return w.OnCompiler(w, node)
 
 }
-func (w Compiler) OnParseFunction(node Node) (Node, error) {
-	functionName := strings.ToLower(node.V)
-	if functionName == "row_number" {
-		node.V = "ROW_NUMBER()"
-		return node, nil
-	}
-	if functionName == "now" {
-		node.V = "NOW()"
-	}
-	if functionName == "len" {
-		node.V = "LENGTH"
-	}
-	if functionName == "year" || functionName == "month" || functionName == "day" || functionName == "hour" || functionName == "minute" || functionName == "second" {
-		upperFunctionName := strings.ToUpper(functionName)
-		v := fmt.Sprintf("EXTRACT(%s FROM %s)", upperFunctionName, node.C[0].V)
-		return Node{Nt: Function, V: v, IsResolved: true}, nil
-	}
-	return node, nil
 
-}
-func (w Compiler) LoadDbDictionary(db *sql.DB) error {
+func (w Compiler) LoadDbDictionary(dbName string, db *sql.DB) error {
 	// decalre sql get table and columns in postgres
 	sqlGetTableAndColumns := "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' ORDER BY table_name, column_name"
 	rows, err := db.Query(sqlGetTableAndColumns)

@@ -7,11 +7,24 @@ import (
 )
 
 func (ctx *DBXTenant) Insert(entity interface{}) error {
-
-	err := MigrateEntity(ctx.DB, ctx.TenantDbName, entity)
-	if err != nil {
-		return err
+	if ctx.DB == nil {
+		panic("please open TenantDbContext first")
 	}
+	if ctx.cfg.Driver == "postgres" {
+		err := postgresMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
+		if err != nil {
+			return err
+		}
+	} else if ctx.cfg.Driver == "mysql" {
+
+		err := mySqlMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
+		if err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("not support driver %s", ctx.cfg.Driver)
+	}
+
 	typ := reflect.TypeOf(entity)
 	if typ.Kind() == reflect.Ptr {
 		typ = typ.Elem()
@@ -39,34 +52,30 @@ func (ctx *DBXTenant) Insert(entity interface{}) error {
 	if err != nil {
 		return err
 	}
+
 	execSql, err := ctx.compiler.Parse(dataInsert.Sql)
 	if err != nil {
 		return err
 	}
-	// start := time.Now()
-	// if walker.OnParseInsertSQL == nil {
-	// 	return fmt.Errorf("compiler.Compiler.OnParseInsertSQL is not set")
-	// }
-	// if tblInfo.AutoValueColsName == nil {
-	// 	tblInfo.AutoValueColsName = []string{}
-	// 	for _, col := range tblInfo.ColInfos {
-	// 		if col.DefaultValue == "auto" {
-	// 			tblInfo.AutoValueColsName = append(tblInfo.AutoValueColsName, col.Name)
-	// 		}
-	// 	}
 
-	// }
-
-	execSql2, err := ctx.compiler.parseInsertSQL(execSql, tblInfo.getAutoValueColsName(), []string{})
+	execSql2, err := ctx.compiler.parseInsertSQL(parseInsertInfo{
+		TableName:        tblInfo.TableName,
+		DefaultValueCols: tblInfo.getDefaultValueColsNames(),
+		// ReturnColAfterInsert: tblInfo.autoValueColsName,
+		SqlInsert:    execSql,
+		keyColsNames: tblInfo.GetPrimaryKeyName(),
+	})
 	//.OnParseInsertSQL(walker, execSql, tblInfo.AutoValueColsName, []string{})
 	if err != nil {
 		return err
 	}
 	// resultArray := []interface{}{}
+	//ctx.Open()
 
+	fmt.Println(len(dataInsert.Params))
 	rw, err := ctx.DB.Query((*execSql2), dataInsert.Params...)
 	if err != nil {
-		fmt.Println(red+" err: ", *execSql2+"\n"+err.Error()+reset)
+
 		return err
 	}
 	defer rw.Close()
@@ -106,17 +115,7 @@ func createInsertCommand(entity interface{}, entityType *EntityType) (*sqlWithPa
 	var ret = sqlWithParams{
 		Params: []interface{}{},
 	}
-	// typ := reflect.TypeOf(entity)
-	// val := reflect.ValueOf(entity)
 
-	// if typ.Kind() == reflect.Ptr {
-	// 	typ = typ.Elem()
-	// 	val = val.Elem()
-	// }
-
-	// if typ.Kind() != reflect.Struct {
-	// 	return nil, fmt.Errorf("not support type %s", typ.String())
-	// }
 	ret.Sql = "insert into "
 	fields := []string{}
 	valParams := []string{}

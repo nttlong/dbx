@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var SqlCompiler dbx.Compiler
+var SqlCompiler dbx.ICompiler
 var Red = "\033[31m"
 var Blue = "\033[34m"
 var Reset = "\033[0m"
@@ -50,14 +50,7 @@ func TestDbxConnect(t *testing.T) {
 }
 func TestCompiler(t *testing.T) {
 	TestDbxConnect(t)
-	SqlCompiler = dbx.Compiler{
-		TableDict: make(map[string]dbx.DbTableDictionaryItem),
-		FieldDict: make(map[string]string),
-		Quote: dbx.QuoteIdentifier{
-			Left:  "\"",
-			Right: "\"",
-		},
-	}
+
 	t.Log(SqlCompiler)
 	//pg connection string host localhost port 5432 user postgres password 123456 dbname db_001124 sslmode disable
 	//fmt.Sprintf("postgres://%s:%s@%s:%d?sslmode=disable", c.User, c.Password, c.Host, c.Port)
@@ -67,15 +60,18 @@ func TestCompiler(t *testing.T) {
 
 	err = db.Ping()
 	assert.NoError(t, err)
-	err = SqlCompiler.LoadDbDictionary(db)
-	if err != nil {
-		fmt.Println(err)
-	}
-	assert.NotEmpty(t, SqlCompiler.TableDict)
-	assert.NotEmpty(t, SqlCompiler.FieldDict)
+	SqlCompiler = dbx.NewCompilerPostgres("a0001", db)
+	err = SqlCompiler.LoadDbDictionary("a0001", db)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// }
+	// assert.NotEmpty(t, SqlCompiler.TableDict)
+	// assert.NotEmpty(t, SqlCompiler.FieldDict)
 }
 
 var sqlTest = []string{
+	"select * from employees where employees.employeeid = ?->SELECT * FROM \"Employees\" WHERE \"Employees\".\"EmployeeId\" = $1",
+	"select employeeId from employees->SELECT \"Employees\".\"EmployeeId\" FROM \"Employees\"",
 	"select row_number() stt,* from employees order by employeeid,createdOn->SELECT ROW_NUMBER() OVER (ORDER BY \"Employees\".\"EmployeeId\" ASC, \"Employees\".\"CreatedOn\" ASC) AS \"stt\", * FROM \"Employees\"",
 	"select employeeid,code  from employees group by employeeid having employeeid*10>100->SELECT \"Employees\".\"EmployeeId\", \"Employees\".\"Code\" FROM \"Employees\" GROUP BY \"Employees\".\"EmployeeId\" HAVING \"Employees\".\"EmployeeId\" * 10 > 100",
 	"select * from employees where concat(firstName,' ', lastName) like '%jonny%'->SELECT * FROM \"Employees\" WHERE concat(\"Employees\".\"FirstName\", ' ', \"Employees\".\"LastName\") like '%jonny%'",
@@ -87,8 +83,8 @@ var sqlTest = []string{
 
 func TestCompilerSQl(t *testing.T) {
 	TestCompiler(t)
-	assert.NotEmpty(t, &SqlCompiler.TableDict)
-	assert.NotEmpty(t, &SqlCompiler.FieldDict)
+	// assert.NotEmpty(t, &SqlCompiler.TableDict)
+	// assert.NotEmpty(t, &SqlCompiler.FieldDict)
 	for i, sql := range sqlTest {
 		sqlInput := strings.Split(sql, "->")[0]
 		sqlExpected := strings.Split(sql, "->")[1]

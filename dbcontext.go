@@ -38,9 +38,9 @@ func (c *Cfg) makeDnsPostgres(dbname string) string {
 func (c *Cfg) makeDnsMySql(dbname string) string {
 	ret := ""
 	if dbname == "" {
-		ret = fmt.Sprintf("%s:%s@tcp(%s:%d)/", c.User, c.Password, c.Host, c.Port)
+		ret = fmt.Sprintf("%s:%s@tcp(%s:%d)/?multiStatements=true&parseTime=true&loc=Local", c.User, c.Password, c.Host, c.Port)
 	} else {
-		ret = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", c.User, c.Password, c.Host, c.Port, dbname)
+		ret = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?multiStatements=true&parseTime=true&loc=Local", c.User, c.Password, c.Host, c.Port, dbname)
 	}
 	return ret
 }
@@ -57,9 +57,19 @@ func (c *Cfg) dns(dbname string) string {
 
 }
 
+type parseInsertInfo struct {
+	TableName        string
+	DefaultValueCols []string
+	// ReturnColAfterInsert []string
+	SqlInsert    string
+	keyColsNames []string
+}
+
 type ICompiler interface {
 	Parse(sql string) (string, error)
-	parseInsertSQL(sql string, autoValueCols []string, returnColAfterInsert []string) (*string, error)
+	parseInsertSQL(p parseInsertInfo) (*string, error)
+
+	LoadDbDictionary(dbName string, db *sql.DB) error
 }
 type DBX struct {
 	*sql.DB
@@ -135,7 +145,6 @@ func (dbx DBX) GetTenant(dbName string) (*DBXTenant, error) {
 	dbTenant.Open()
 	defer dbTenant.Close()
 	for _, e := range _entities.GetEntities() {
-		fmt.Println("entity", reflect.TypeOf(e).Name())
 
 		err = dbTenant.executor.createTable(dbName, e)(dbTenant.DB)
 		if err != nil {

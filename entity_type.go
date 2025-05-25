@@ -17,16 +17,20 @@ import (
 
 type EntityType struct {
 	reflect.Type
-	TableName                    string
-	filedMap                     sync.Map
-	RefEntities                  []*EntityType
-	EntityFields                 []*EntityField
-	IsLoaded                     bool
-	RefFields                    []*EntityField
-	mapCols                      map[string]*EntityField
-	hasMapCols                   bool // map of field name to EntityField
-	autoValueColsName            []string
-	hasGenerateAutoValueColsName bool // list of field names that have auto value
+	TableName                       string
+	filedMap                        sync.Map
+	RefEntities                     []*EntityType
+	EntityFields                    []*EntityField
+	IsLoaded                        bool
+	RefFields                       []*EntityField
+	mapCols                         map[string]*EntityField
+	hasMapCols                      bool // map of field name to EntityField
+	autoValueColsName               []string
+	hasGenerateDefaultValueColsName bool // list of field names that have auto value
+	hasGetPrimaryKeyName            bool // list of field names that have primary key
+	defaultValueColsNames           []string
+	primaryKeyNames                 []string
+	hasGetDefaultValueColsName      bool // list of field names that have default value
 }
 type EntityField struct {
 	reflect.StructField
@@ -325,6 +329,21 @@ func (e *EntityType) GetPrimaryKey() []*EntityField {
 	}
 	return ret
 }
+func (e *EntityType) GetPrimaryKeyName() []string {
+	if !e.hasGetPrimaryKeyName {
+		ret := []string{}
+		for _, field := range e.EntityFields {
+			if field.IsPrimaryKey {
+				ret = append(ret, field.Name)
+			}
+		}
+		e.primaryKeyNames = ret
+		e.hasGetPrimaryKeyName = true
+		return ret
+	}
+	return e.primaryKeyNames
+
+}
 func (e *EntityType) GetForeignKey() []*EntityField {
 
 	ret := make([]*EntityField, 0)
@@ -351,7 +370,7 @@ func (e *EntityType) GetIndex() map[string][]*EntityField {
 	ret := map[string][]*EntityField{}
 
 	for _, field := range e.EntityFields {
-		if field.IndexName != "" {
+		if field.IndexName != "" && field.UkName == "" {
 			//check if index already exist
 			if fields, ok := ret[field.IndexName]; ok {
 				fields = append(fields, field)
@@ -382,20 +401,20 @@ func (e *EntityType) GetUniqueKey() map[string][]*EntityField {
 	return ret
 }
 
-func (e *EntityType) getAutoValueColsName() []string {
-	if !e.hasGenerateAutoValueColsName {
+func (e *EntityType) getDefaultValueColsNames() []string {
+	if !e.hasGenerateDefaultValueColsName {
 		ret := []string{}
 		for _, field := range e.EntityFields {
-			if field.DefaultValue == "auto" {
+			if field.DefaultValue != "" && field.DefaultValue != "auto" && !field.IsPrimaryKey {
 				ret = append(ret, field.Name)
 			}
 		}
-		e.autoValueColsName = ret
-		e.hasGenerateAutoValueColsName = true
+		e.defaultValueColsNames = ret
+		e.hasGenerateDefaultValueColsName = true
 
 		return ret
 	}
-	return e.autoValueColsName
+	return e.defaultValueColsNames
 }
 func (e *EntityType) getMapCols() map[string]*EntityField {
 	if !e.hasMapCols {

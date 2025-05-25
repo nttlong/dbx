@@ -8,9 +8,9 @@ import (
 
 type BaseInfo struct {
 	CreatedOn   time.Time  `db:"df:now();idx"`
-	CreatedBy   string     `db:"varchar(50);idx"`
+	CreatedBy   string     `db:"nvarchar(50);idx"`
 	UpdatedOn   *time.Time `db:"idx"`
-	UpdatedBy   *string    `db:"varchar(50);idx"`
+	UpdatedBy   *string    `db:"nvarchar(50);idx"`
 	Description *string
 }
 type Persons struct {
@@ -51,9 +51,9 @@ type Employees struct {
 	//PersonId     int    `db:"foreignkey(Persons.PersonId)"`
 	Title        string `db:"nvarchar(50)"`
 	BasicSalary  float32
-	DepartmentId *int          `db:"foreignkey(Departments.Id)"`
-	Crc32        int           `db:"auto"`
-	WorkingDays  []WorkingDays `db:"fk:EmployeeId"`
+	DepartmentId *int `db:"foreignkey(Departments.Id)"`
+
+	WorkingDays []WorkingDays `db:"fk:EmployeeId"`
 
 	UserId *uuid.UUID
 }

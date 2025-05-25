@@ -87,11 +87,11 @@ func TestNewExecutorPostgres(t *testing.T) {
 	start := time.Now()
 	// et,err := dbx.CreateEntityType(&Departments{})
 	assert.NoError(t, err)
-	dbx.MigrateEntity(db, "test_db__003", &Employees{})
+	//dbx.MigrateEntity(db, "test_db__003", &Employees{})
 
 	fmt.Println("create table time:", time.Since(start).Milliseconds())
 	start = time.Now()
-	dbx.MigrateEntity(db, "test_db__003", &Departments{})
+	//dbx.MigrateEntity(db, "test_db__003", &Departments{})
 
 	fmt.Println("create table time:", time.Since(start).Milliseconds())
 

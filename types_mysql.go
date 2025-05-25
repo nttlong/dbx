@@ -54,7 +54,7 @@ func (e *executorMySql) createTable(dbname string, entity interface{}) func(db *
 			return fmt.Errorf("please open db first")
 		}
 		for _, sqlCmd := range sqlList {
-			fmt.Println(green + "Exec: " + reset + sqlCmd.String())
+
 			_, err := db.Exec(sqlCmd.String())
 			if err != nil {
 
@@ -63,14 +63,13 @@ func (e *executorMySql) createTable(dbname string, entity interface{}) func(db *
 
 						continue
 					} else {
-						fmt.Println(red + "Error: " + reset + err.Error())
-						fmt.Println(red + "SQL: " + reset + sqlCmd.String())
+
+						fmt.Println(red+"SQL: "+reset+sqlCmd.String(), red+"Error: "+reset+err.Error())
 						return mySQlErr
 					}
 
 				} else {
-					fmt.Println(red + "Error: " + reset + err.Error())
-					fmt.Println(red + "SQL: " + reset + sqlCmd.String())
+					fmt.Println(red+"SQL: "+reset+sqlCmd.String(), red+"Error: "+reset+err.Error())
 
 					return err
 				}
@@ -94,7 +93,7 @@ func (e *executorMySql) createSqlCreateIndexIfNotExists(indexName string, tableN
 		sqlCmdStr += e.quote(field.Name) + ","
 	}
 	sqlCmdStr = strings.TrimSuffix(sqlCmdStr, ",") + ")"
-	fmt.Println(sqlCmdStr)
+
 	return SqlCommandCreateIndex{
 		string:    sqlCmdStr,
 		TableName: tableName,
@@ -103,7 +102,21 @@ func (e *executorMySql) createSqlCreateIndexIfNotExists(indexName string, tableN
 	}
 }
 func (e *executorMySql) createSqlCreateUniqueIndexIfNotExists(indexName string, tableName string, index []*EntityField) SqlCommandCreateUnique {
-	panic("createSqlCreateUniqueIndexIfNotExists not implemented for MySQL executor")
+	/**
+		ALTER TABLE `products`
+	ADD CONSTRAINT `uc_category_product_code` UNIQUE (`category_id`, `product_code`);
+	*/
+	sqlCmdStr := "ALTER TABLE " + e.quote(tableName) + " ADD CONSTRAINT " + e.quote(indexName) + " UNIQUE ("
+	for _, field := range index {
+		sqlCmdStr += e.quote(field.Name) + ","
+	}
+	sqlCmdStr = strings.TrimSuffix(sqlCmdStr, ",") + ")"
+	return SqlCommandCreateUnique{
+		string:    sqlCmdStr,
+		TableName: tableName,
+		IndexName: indexName,
+		Index:     index,
+	}
 }
 func (e *executorMySql) makeSQlCreateTable(primaryKey []*EntityField, tableName string) SqlCommandCreateTable {
 	/**
@@ -130,7 +143,7 @@ func (e *executorMySql) makeSQlCreateTable(primaryKey []*EntityField, tableName 
 	}
 	sqlCmdCreateTableStr += strings.Join(keyColsNames, ", ")
 	sqlCmdCreateTableStr += ")"
-	fmt.Println(sqlCmdCreateTableStr)
+
 	return SqlCommandCreateTable{
 		string:    sqlCmdCreateTableStr,
 		TableName: tableName,
@@ -194,7 +207,7 @@ func (e *executorMySql) makeAlterTableAddColumn(tableName string, field EntityFi
 	if dfValue != "" {
 		sqlCmdCreateTableStr += " DEFAULT " + dfValue
 	}
-	fmt.Println(sqlCmdCreateTableStr)
+
 	return SqlCommandAddColumn{
 		string:    sqlCmdCreateTableStr,
 		TableName: tableName,
@@ -236,7 +249,7 @@ func (e *executorMySql) getSQlCreateTable(entityType *EntityType) (SqlCommandLis
 	uniqueIndexCols := entityType.GetUniqueKey()
 
 	for indexName, index := range uniqueIndexCols {
-		sqlIndex := e.createSqlCreateIndexIfNotExists(indexName, entityType.Name(), index)
+		sqlIndex := e.createSqlCreateUniqueIndexIfNotExists(indexName, entityType.Name(), index)
 		ret = append(ret, sqlIndex)
 	}
 	foreignKeyList := entityType.GetForeignKeyRef()
@@ -271,7 +284,7 @@ func (e *executorMySql) makeSqlCommandForeignKey(fkInfo []*ForeignKeyInfo) []*Sq
 		fromKey := e.quote(fromFields...)
 		toKeys := e.quote(toFields...)
 		sql := "ALTER TABLE " + e.quote(fk.FromEntity.Name()) + " ADD CONSTRAINT " + e.quote(fkName) + " FOREIGN KEY (" + fromKey + ") REFERENCES " + e.quote(fk.ToEntity.Name()) + "(" + toKeys + ")  ON UPDATE CASCADE"
-		fmt.Println(sql)
+
 		ret = append(ret, &SqlCommandForeignKey{
 			string:     sql,
 			FromTable:  fk.FromEntity.Name(),
@@ -308,5 +321,11 @@ func (e *executorMySql) createDb(dbName string) func(dbMaster DBX, dbTenant DBXT
 	}
 
 	return retFunc
+
+}
+func mySqlMigrateEntity(db *sql.DB, dbName string, entity interface{}) error {
+
+	err := newExecutorMySql().createTable(dbName, entity)(db)
+	return err
 
 }

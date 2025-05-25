@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/genproto/googleapis/type/decimal"
@@ -360,19 +361,9 @@ func (e *executorPostgres) createTable(dbname string, entity interface{}) func(d
 
 }
 
-func MigrateEntity(db *sql.DB, dbName string, entity interface{}) error {
-	if db == nil {
-		return fmt.Errorf("please open db first")
-	}
-	var executor IExecutor
-	driver := db.Driver()
-	if _, ok := driver.(*pq.Driver); ok {
+func postgresMigrateEntity(db *sql.DB, dbName string, entity interface{}) error {
 
-		executor = newExecutorPostgres()
-	} else {
-		return fmt.Errorf("unsupported driver %s", driver)
-	}
-	err := executor.createTable(dbName, entity)(db)
+	err := newExecutorPostgres().createTable(dbName, entity)(db)
 	return err
 
 }
