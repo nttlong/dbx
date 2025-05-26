@@ -179,8 +179,12 @@ func (dbx DBX) GetTenant(dbName string) (*DBXTenant, error) {
 	}
 	if dbx.cfg.Driver == "postgres" {
 		dbTenant.compiler = newCompilerPostgres(dbName, dbTenant.DB)
-	} else {
+	} else if dbx.cfg.Driver == "mysql" {
 		dbTenant.compiler = newCompilerMysql(dbName, dbTenant.DB)
+	} else if dbx.cfg.Driver == "mssql" {
+		dbTenant.compiler = newCompilerMssql(dbName, dbTenant.DB)
+	} else {
+		panic(fmt.Errorf("unsupported driver %s", dbx.cfg.Driver))
 	}
 	dbTenant.TenantDbName = dbName
 

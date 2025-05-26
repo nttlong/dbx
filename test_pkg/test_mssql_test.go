@@ -3,6 +3,7 @@ package dbx
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	_ "github.com/microsoft/go-mssqldb"
 	"github.com/nttlong/dbx"
@@ -13,21 +14,6 @@ var MssqlDbx *dbx.DBX
 var MssqlTenantDb *dbx.DBXTenant
 
 func TestMssql(t *testing.T) {
-	// Connection string
-	//connString := 	"sqlserver://sa:123456@MSI/SQLEXPRESS"
-	//					 sqlserver://sa:123456@MSI/SQLEXPRESS:1433
-	// db, err := sql.Open("sqlserver", connString)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer db.Close()
-
-	// // Kiểm tra kết nối
-	// err = db.Ping()
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println("Connected to MSSQL successfully!")
 
 	Dbx := dbx.NewDBX(dbx.Cfg{
 		Driver: "mssql",
@@ -50,10 +36,55 @@ func TestMssql(t *testing.T) {
 func TestMssqlCreateTenant(t *testing.T) {
 	TestMssql(t)
 	assert.NotEmpty(t, MssqlDbx)
-	tenantDb, err := MssqlDbx.GetTenant("a0001")
+	tenantDb, err := MssqlDbx.GetTenant("a0002")
 	if err != nil {
 		fmt.Println(err)
 	}
 	assert.NoError(t, err)
 	MssqlTenantDb = tenantDb
+}
+func TestMssqlInsert(t *testing.T) {
+	TestMssqlCreateTenant(t)
+	assert.NotEmpty(t, MssqlTenantDb)
+	MssqlTenantDb.Open()
+	MssqlTenantDb.Open()
+	defer TenantMysql.Close()
+	avg := int64(0)
+	for i := 20000; i < 50000; i++ {
+		emp := Employees{
+
+			Code:        fmt.Sprintf("EMPoo%.8d", i),
+			BasicSalary: 1000000,
+			BaseInfo: BaseInfo{
+				CreatedOn:   time.Now(),
+				CreatedBy:   "test_user",
+				UpdatedOn:   nil,
+				UpdatedBy:   nil,
+				Description: nil,
+			},
+			Persons: Persons{
+				FirstName: "John",
+				LastName:  "Doe",
+				Gender:    true,
+				BirthDate: time.Now(),
+				Address:   "test_address",
+				Phone:     "test_phone",
+				Email:     "test_email",
+			},
+		}
+		start := time.Now()
+		err := MssqlTenantDb.Insert(&emp)
+		if err != nil {
+			fmt.Println(err)
+		}
+		n := time.Since(start).Milliseconds()
+		avg += n
+		fmt.Println("Elapse time in ms ", n)
+		if err != nil {
+			fmt.Println(err)
+		}
+		assert.NoError(t, err)
+	}
+	fmt.Println("Average time in ms ", avg/int64(50000-20000))
+
 }

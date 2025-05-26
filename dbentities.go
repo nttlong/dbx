@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
@@ -19,6 +20,12 @@ func (ctx *DBXTenant) Insert(entity interface{}) error {
 	} else if ctx.cfg.Driver == "mysql" {
 
 		err := mySqlMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
+		if err != nil {
+			return err
+		}
+	} else if ctx.cfg.Driver == "mssql" {
+
+		err := mssqlSqlMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
 		if err != nil {
 			return err
 		}
@@ -41,6 +48,9 @@ func (ctx *DBXTenant) Insert(entity interface{}) error {
 		return ctx.pgInsert(tblInfo, entity)
 	} else if ctx.cfg.Driver == "mysql" {
 		return ctx.mysqlInsert(tblInfo, entity)
+		//return ctx.myInsert(tblInfo, entity)
+	} else if ctx.cfg.Driver == "mssql" {
+		return ctx.mssqlInsert(tblInfo, entity)
 		//return ctx.myInsert(tblInfo, entity)
 	} else {
 		return fmt.Errorf("not support driver %s", ctx.cfg.Driver)
@@ -119,48 +129,7 @@ func (ctx *DBXTenant) mysqlInsert(tblInfo *EntityType, entity interface{}) error
 	default:
 		return fmt.Errorf("unsupported 'Id' field type: %s", idField.Kind())
 	}
-	// tx.Commit()
-	// start := time.Now()
-	// rw, err := db.Query(sqlSelect, insertedId)
-	// // n := time.Since(start).Milliseconds()
-	// // fmt.Println("Query: ", n)
-	// if err != nil {
-	// 	// tx.Rollback()
-	// 	return err
-	// }
-	// defer rw.Close()
 
-	// insertedId, err := result.LastInsertId()
-	// if err != nil {
-	// 	tx.Rollback()
-	// 	return err
-	// }
-	// start := time.Now()
-	// rw, err := tx.Query(sqlSelect, insertedId)
-	// // n := time.Since(start).Milliseconds()
-	// // fmt.Println("Query: ", n)
-	// if err != nil {
-	// 	tx.Rollback()
-	// 	return err
-	// }
-	// defer rw.Close()
-
-	// for rw.Next() {
-	// 	// start = time.Now()
-	// 	err := scanRowToStruct(rw, entity) // thay may cai vong lap o duoi ban ham nay chay OK
-	// 	// n = time.Since(start).Milliseconds()
-	// 	// fmt.Println("scanRowToStruct time: ", n)
-	// 	if err != nil {
-	// 		// tx.Rollback()
-	// 		return err
-	// 	}
-
-	// }
-
-	// // err = tx.Commit()
-	// if err != nil {
-	// 	return err
-	// }
 	return nil
 
 }
@@ -232,6 +201,181 @@ func (ctx *DBXTenant) pgInsert(tblInfo *EntityType, entity interface{}) error {
 		return err
 	}
 	return nil
+}
+func (ctx *DBXTenant) mssqlInsertDelete(tblInfo *EntityType, entity interface{}) error {
+	err := mssqlSqlMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
+
+	if err != nil {
+		return err
+	}
+	dataInsert, err := createInsertCommand(entity, tblInfo)
+
+	if err != nil {
+		return err
+	}
+
+	execSql, err := ctx.compiler.Parse(dataInsert.Sql)
+	if err != nil {
+		return err
+	}
+
+	execSql2, err := ctx.compiler.parseInsertSQL(parseInsertInfo{
+		TableName:        tblInfo.TableName,
+		DefaultValueCols: tblInfo.getDefaultValueColsNames(),
+		// ReturnColAfterInsert: tblInfo.autoValueColsName,
+		SqlInsert:    execSql,
+		keyColsNames: tblInfo.GetPrimaryKeyName(),
+	})
+	//.OnParseInsertSQL(walker, execSql, tblInfo.AutoValueColsName, []string{})
+	if err != nil {
+		return err
+	}
+	// resultArray := []interface{}{}
+	//ctx.Open()
+
+	tx, err := ctx.Begin()
+	if err != nil {
+		return err
+	}
+
+	var finalErr error
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			panic(r)
+		} else if finalErr != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// === Sửa lỗi Scan NULL: Sử dụng sql.NullInt64 ===
+	var insertedNullId sql.NullInt64 // Sử dụng sql.NullInt64 để chứa giá trị có thể là NULL
+
+	// Thực thi truy vấn và scan kết quả
+	err = tx.QueryRow(*execSql2, dataInsert.Params...).Scan(&insertedNullId)
+	if err != nil {
+		finalErr = err
+		return fmt.Errorf("lỗi khi thực thi INSERT hoặc scan ID: %w", err)
+	}
+
+	// === Kiểm tra giá trị NullInt64 ===
+	if insertedNullId.Valid {
+		// Nếu giá trị hợp lệ (không phải NULL)
+		insertedID := insertedNullId.Int64 // Lấy giá trị int64 thực tế
+		fmt.Printf("Đã chèn và lấy được EmployeeId: %d\n", insertedID)
+
+		// --- Gán ID vào entity của bạn ---
+		entityVal := reflect.ValueOf(entity)
+		if entityVal.Kind() == reflect.Ptr {
+			entityVal = entityVal.Elem()
+		}
+		idField := entityVal.FieldByName(tblInfo.GetPrimaryKeyName()[0])
+		if idField.IsValid() && idField.CanSet() {
+			switch idField.Kind() {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				idField.SetInt(insertedID)
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				idField.SetUint(uint64(insertedID))
+			}
+		} else {
+			fmt.Printf("Cảnh báo: Không thể gán insertedID %d vào trường '%s' của entity\n", insertedID, tblInfo.GetPrimaryKeyName())
+		}
+	} else {
+		// === QUAN TRỌNG: Nếu Valid là FALSE, có nghĩa là SCOPE_IDENTITY() trả về NULL ===
+		// Điều này HẦU HẾT các lần là do câu lệnh INSERT bị lỗi.
+		// Bạn cần kiểm tra xem các tham số dataInsert.Params có đúng không,
+		// và bảng Employees có vi phạm ràng buộc NOT NULL, UNIQUE, PRIMARY KEY, FOREIGN KEY nào không.
+		finalErr = fmt.Errorf("không thể lấy EmployeeId: SCOPE_IDENTITY() trả về NULL. Có thể INSERT thất bại do vi phạm ràng buộc.")
+		return finalErr
+	}
+
+	// Commit transaction sau khi đã lấy được ID và xử lý kết quả.
+	err = tx.Commit()
+	if err != nil {
+		finalErr = err
+		return err
+	}
+
+	return nil
+}
+func (ctx *DBXTenant) mssqlInsert(tblInfo *EntityType, entity interface{}) error {
+	// Kiểm tra ctx.DB, nếu chưa mở thì panic (giữ nguyên)
+	if ctx.DB == nil {
+		panic("please open TenantDbContext first")
+	}
+
+	// Thực hiện migrate (giữ nguyên)
+	err := mssqlSqlMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
+	if err != nil {
+		return err
+	}
+
+	// Tạo lệnh INSERT (giữ nguyên)
+	dataInsert, err := createInsertCommand(entity, tblInfo)
+	if err != nil {
+		return err
+	}
+
+	// Parse SQL (giữ nguyên)
+	execSql, err := ctx.compiler.Parse(dataInsert.Sql)
+	if err != nil {
+		return err
+	}
+
+	// Chuẩn bị SQL cuối cùng với SCOPE_IDENTITY() (giữ nguyên)
+	// execSql2 là biến chứa câu lệnh INSERT; SELECT ID = convert(bigint, SCOPE_IDENTITY());
+	execSql2, err := ctx.compiler.parseInsertSQL(parseInsertInfo{
+		TableName:        tblInfo.TableName,
+		DefaultValueCols: tblInfo.getDefaultValueColsNames(),
+		SqlInsert:        execSql, // execSql là câu lệnh INSERT gốc
+		keyColsNames:     tblInfo.GetPrimaryKeyName(),
+	})
+	if err != nil {
+		return err
+	}
+
+	// === THAY ĐỔI: LOẠI BỎ TRANSACTION ===
+	// Không còn Begin(), Rollback(), Commit()
+
+	// Sử dụng sql.NullInt64 để chứa giá trị ID có thể là NULL
+	var insertedNullId sql.NullInt64
+
+	// Thực thi truy vấn bằng ctx.DB.QueryRow() thay vì tx.QueryRow()
+	// Đây là nơi thực thi câu lệnh SQL và scan kết quả ID
+	err = ctx.DB.QueryRow(*execSql2, dataInsert.Params...).Scan(&insertedNullId)
+	if err != nil {
+		// Không có rollback vì không dùng transaction
+		return fmt.Errorf("lỗi khi thực thi INSERT hoặc scan ID: %w", err)
+	}
+
+	// Kiểm tra giá trị NullInt64
+	if insertedNullId.Valid {
+		insertedID := insertedNullId.Int64
+		fmt.Printf("Đã chèn và lấy được EmployeeId: %d\n", insertedID)
+
+		// Gán ID vào entity của bạn (giữ nguyên)
+		entityVal := reflect.ValueOf(entity)
+		if entityVal.Kind() == reflect.Ptr {
+			entityVal = entityVal.Elem()
+		}
+		idField := entityVal.FieldByName(tblInfo.GetPrimaryKeyName()[0]) // Lấy tên cột khóa chính
+		if idField.IsValid() && idField.CanSet() {
+			switch idField.Kind() {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				idField.SetInt(insertedID)
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				idField.SetUint(uint64(insertedID))
+			}
+		} else {
+			fmt.Printf("Cảnh báo: Không thể gán insertedID %d vào trường '%s' của entity\n", insertedID, tblInfo.GetPrimaryKeyName()[0])
+		}
+	} else {
+		// Nếu SCOPE_IDENTITY() trả về NULL, có nghĩa là INSERT thất bại.
+		// Không có transaction, nên không có gì để rollback.
+		return fmt.Errorf("không thể lấy EmployeeId: SCOPE_IDENTITY() trả về NULL. Có thể INSERT thất bại do vi phạm ràng buộc.")
+	}
+
+	return nil // Trả về nil nếu mọi thứ thành công
 }
 func getStructFieldValue(s interface{}, fieldName string) (interface{}, error) {
 	val := reflect.ValueOf(s)

@@ -373,3 +373,9 @@ func (e executorMssql) quote(str ...string) string {
 	return "[" + strings.Join(str, "][") + "]"
 
 }
+func mssqlSqlMigrateEntity(db *sql.DB, dbName string, entity interface{}) error {
+
+	err := newExecutorMssql().createTable(dbName, entity)(db)
+	return err
+
+}

@@ -54,7 +54,7 @@ type Employees struct {
 
 	WorkingDays []WorkingDays `db:"fk:EmployeeId"`
 
-	UserId string `db:"foreignkey(Users.Id);varchar(36)"` // foreign key to Users table
+	UserId *string `db:"foreignkey(Users.Id);varchar(36)"` // foreign key to Users table
 }
 type WorkingDays struct {
 	Id         int    `db:"pk;df:auto"`
