@@ -136,6 +136,9 @@ func (e *executorMySql) makeSQlCreateTable(primaryKey []*EntityField, tableName 
 		if field.DefaultValue == "auto" {
 			fieldType = "INT AUTO_INCREMENT "
 		}
+		if field.MaxLen > 0 && fieldType == "TEXT" {
+			fieldType = "NVARCHAR(" + strconv.Itoa(field.MaxLen) + ")"
+		}
 		strKeyColName := e.quote(field.Name) + " " + fieldType + " PRIMARY KEY "
 
 		keyColsNames = append(keyColsNames, strKeyColName)

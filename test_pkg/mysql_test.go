@@ -75,7 +75,7 @@ func TestMySQLInsert(t *testing.T) {
 	for i := 20000; i < 50000; i++ {
 		emp := Employees{
 
-			Code:        fmt.Sprintf("EMP%.8d", i),
+			Code:        fmt.Sprintf("EMPoo%.8d", i),
 			BasicSalary: 1000000,
 			BaseInfo: BaseInfo{
 				CreatedOn:   time.Now(),

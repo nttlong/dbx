@@ -1,7 +1,7 @@
 package dbx
 
 import (
-	"database/sql"
+	"fmt"
 	"testing"
 
 	_ "github.com/microsoft/go-mssqldb"
@@ -9,25 +9,51 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMssql(t *testing.T) {
-	dsn := "server=localhost\\SQLEXPRESS;user id=sa;password=123456;database=master;"
+var MssqlDbx *dbx.DBX
+var MssqlTenantDb *dbx.DBXTenant
 
-	db, err := sql.Open("mssql", dsn)
-	assert.NoError(t, err)
-	err = db.Ping()
-	assert.NoError(t, err)
-	defer db.Close()
-	//docker run -e "ACCEPT_EULA=Y" -e "SA_PASSWORD=123456" -p 1433:1433 --name sqlserver_express -d mcr.microsoft.com/mssql/server:2022-latest
+func TestMssql(t *testing.T) {
+	// Connection string
+	//connString := 	"sqlserver://sa:123456@MSI/SQLEXPRESS"
+	//					 sqlserver://sa:123456@MSI/SQLEXPRESS:1433
+	// db, err := sql.Open("sqlserver", connString)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// defer db.Close()
+
+	// // Kiểm tra kết nối
+	// err = db.Ping()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// fmt.Println("Connected to MSSQL successfully!")
 
 	Dbx := dbx.NewDBX(dbx.Cfg{
-		Driver:   "mssql",
-		Host:     "MSI\\SQLEXPRESS",
-		Port:     1433,
+		Driver: "mssql",
+		Host:   "MSI/SQLEXPRESS",
+		// Port:     1433,
 		User:     "sa",
 		Password: "123456",
 		SSL:      false,
 	})
 	Dbx.Open()
-	err = Dbx.Ping()
+	err := Dbx.Ping()
 	assert.NoError(t, err)
+	type TestSt struct {
+		UserId string `db:"foreignkey(Users.Id);varchar(36)"`
+	}
+	dbx.AddEntities(&Employees{}, &Departments{}, &WorkingDays{}, &Users{})
+	MssqlDbx = Dbx
+
+}
+func TestMssqlCreateTenant(t *testing.T) {
+	TestMssql(t)
+	assert.NotEmpty(t, MssqlDbx)
+	tenantDb, err := MssqlDbx.GetTenant("a0001")
+	if err != nil {
+		fmt.Println(err)
+	}
+	assert.NoError(t, err)
+	MssqlTenantDb = tenantDb
 }

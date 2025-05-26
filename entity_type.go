@@ -209,6 +209,14 @@ func (f *EntityField) initPropertiesByTags() error {
 			}
 			f.MaxLen = intLen
 		}
+		if strings.HasPrefix(tag, "text(") && strings.HasSuffix(tag, ")") {
+			strLen := tag[5 : len(tag)-1]
+			intLen, err := strconv.Atoi(strLen)
+			if err != nil {
+				return fmt.Errorf("invalid nvarchar tag: %s", strTags)
+			}
+			f.MaxLen = intLen
+		}
 
 	}
 	strKey := `key_{{r.Name}}_{{strTags}}`
@@ -562,11 +570,13 @@ func CreateEntityType(entity interface{}) (*EntityType, error) {
 }
 
 var replacerConstraint = map[string][]string{
+	// "nvarchar": {"varchar"},
 	"pk":   {"primary_key", "primarykey", "primary", "primary_key_constraint"},
 	"fk":   {"foreign_key", "foreignkey", "foreign", "foreign_key_constraint"},
 	"uk":   {"unique", "unique_key", "uniquekey", "unique_key_constraint"},
 	"idx":  {"index", "index_key", "indexkey", "index_constraint"},
-	"text": {"vachar", "varchar", "varchar2"},
+	"text": {"varchar", "varchar", "varchar2", "nvarchar"},
+
 	"size": {"length", "len"},
 	"df":   {"default", "default_value", "default_value_constraint"},
 	"auto": {"auto_increment", "autoincrement", "serial_key", "serialkey", "serial_key_constraint"},

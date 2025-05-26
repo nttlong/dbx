@@ -4,8 +4,11 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/google/uuid"
 )
 
 type FieldMeta struct {
@@ -13,7 +16,17 @@ type FieldMeta struct {
 	Typ    reflect.Type
 }
 
-func BuildFieldMap(t reflect.Type) map[string]FieldMeta {
+var cachebuildFieldMap sync.Map
+
+func buildFieldMap(t reflect.Type) map[string]FieldMeta {
+	if v, ok := cachebuildFieldMap.Load(t); ok {
+		return v.(map[string]FieldMeta)
+	}
+	m := buildFieldMapNoCache(t)
+	cachebuildFieldMap.Store(t, m)
+	return m
+}
+func buildFieldMapNoCache(t reflect.Type) map[string]FieldMeta {
 	m := map[string]FieldMeta{}
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
@@ -25,7 +38,7 @@ func BuildFieldMap(t reflect.Type) map[string]FieldMeta {
 	return m
 }
 
-func scanRowToStruct(rows *sql.Rows, dest interface{}) error {
+func scanRowToStruct(rows *sql.Rows, dest interface{}, columns []string) error {
 	destVal := reflect.ValueOf(dest)
 	if destVal.Kind() != reflect.Ptr || destVal.IsNil() {
 		return fmt.Errorf("dest must be non-nil pointer to struct")
@@ -36,22 +49,15 @@ func scanRowToStruct(rows *sql.Rows, dest interface{}) error {
 		return fmt.Errorf("dest must point to struct")
 	}
 
-	columns, err := rows.Columns()
-	if err != nil {
-		return err
-	}
-
-	fieldMap := BuildFieldMap(elemType)
+	fieldMap := buildFieldMap(elemType)
 	basePtr := unsafe.Pointer(elemVal.UnsafeAddr())
 
-	// giữ dummy để không bị GC
 	dummies := make([]interface{}, len(columns))
 	scanArgs := make([]interface{}, len(columns))
 
 	for i, col := range columns {
 		meta, ok := fieldMap[col]
 		if !ok {
-			// fallback nếu không có field tương ứng
 			dummies[i] = new(interface{})
 			scanArgs[i] = dummies[i]
 			continue
@@ -73,9 +79,12 @@ func scanRowToStruct(rows *sql.Rows, dest interface{}) error {
 		case reflect.Bool:
 			scanArgs[i] = (*bool)(fieldPtr)
 		case reflect.Struct:
-			if meta.Typ == reflect.TypeOf(time.Time{}) {
+			switch meta.Typ {
+			case reflect.TypeOf(time.Time{}):
 				scanArgs[i] = (*time.Time)(fieldPtr)
-			} else {
+			case reflect.TypeOf(uuid.UUID{}): // xử lý UUID
+				scanArgs[i] = (*uuid.UUID)(fieldPtr)
+			default:
 				dummies[i] = reflect.New(meta.Typ).Interface()
 				scanArgs[i] = dummies[i]
 			}
@@ -130,4 +139,93 @@ func scanRowToStruct1(rows *sql.Rows, dest interface{}) error {
 	}
 
 	return nil
+}
+func fetchAllRows1(rows *sql.Rows, typ reflect.Type) (interface{}, error) {
+
+	defer rows.Close()
+
+	slice := reflect.MakeSlice(reflect.SliceOf(typ), 0, 0)
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+
+		elem := reflect.New(typ).Interface()
+		err := scanRowToStruct(rows, elem, cols)
+		if err != nil {
+			return nil, err
+		}
+
+		slice = reflect.Append(slice, reflect.ValueOf(elem).Elem())
+
+	}
+	return slice.Interface(), nil
+}
+func fetchAllRows(rows *sql.Rows, typ reflect.Type) (interface{}, error) {
+	defer rows.Close()
+
+	const defaultCap = 4096
+	slice := reflect.MakeSlice(reflect.SliceOf(typ), 0, defaultCap)
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	fieldMap := buildFieldMap(typ)
+
+	for rows.Next() {
+		ptr := reflect.New(typ)
+		mem := unsafe.Pointer(ptr.Pointer()) // lấy địa chỉ trước khi gọi Elem
+		val := ptr.Elem()
+
+		scanArgs := make([]interface{}, len(cols))
+		for i, col := range cols {
+			if meta, ok := fieldMap[col]; ok {
+				fieldPtr := unsafe.Pointer(uintptr(mem) + meta.Offset)
+
+				switch meta.Typ.Kind() {
+				case reflect.String:
+					scanArgs[i] = (*string)(fieldPtr)
+				case reflect.Int:
+					scanArgs[i] = (*int)(fieldPtr)
+				case reflect.Int64:
+					scanArgs[i] = (*int64)(fieldPtr)
+				case reflect.Float32:
+					scanArgs[i] = (*float32)(fieldPtr)
+				case reflect.Float64:
+					scanArgs[i] = (*float64)(fieldPtr)
+				case reflect.Bool:
+					scanArgs[i] = (*bool)(fieldPtr)
+				case reflect.Struct:
+					// time.Time, uuid.UUID, etc.
+					switch meta.Typ.String() {
+					case "time.Time":
+						scanArgs[i] = (*time.Time)(fieldPtr)
+					case "uuid.UUID":
+						scanArgs[i] = (*[16]byte)(fieldPtr) // hoặc dùng gorm UUID
+					default:
+						var dummy interface{}
+						scanArgs[i] = &dummy
+					}
+				default:
+					var dummy interface{}
+					scanArgs[i] = &dummy
+				}
+			} else {
+				var dummy interface{}
+				scanArgs[i] = &dummy
+			}
+		}
+
+		if err := rows.Scan(scanArgs...); err != nil {
+			return nil, err
+		}
+
+		slice = reflect.Append(slice, val)
+	}
+
+	return slice.Interface(), nil
 }

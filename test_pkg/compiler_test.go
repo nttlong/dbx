@@ -213,7 +213,7 @@ func TestInsertUser(t *testing.T) {
 		println(err)
 	}
 	user := Users{
-		Id:           uuid.New(),
+		Id:           uuid.New().String(),
 		Username:     "admin",
 		HashPassword: "123456",
 	}

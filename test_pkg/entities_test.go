@@ -2,8 +2,6 @@ package dbx
 
 import (
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type BaseInfo struct {
@@ -38,7 +36,7 @@ type Departments struct {
 	Description *string
 }
 type Users struct {
-	Id           uuid.UUID  `db:"pk;df:uuid()"`
+	Id           string     `db:"pk;nvarchar(36)"`
 	Username     string     `db:"nvarchar(50);unique;idx"` // unique username
 	HashPassword string     `db:"nvarchar(400)"`
 	Emp          *Employees `db:"fk:UserId"`
@@ -47,7 +45,7 @@ type Users struct {
 type Employees struct {
 	BaseInfo
 	EmployeeId int    `db:"pk;df:auto"`
-	Code       string `db:"nvarchar(50);unique"`
+	Code       string `db:"varchar(50);unique"`
 	Persons
 	//PersonId     int    `db:"foreignkey(Persons.PersonId)"`
 	Title        string `db:"nvarchar(50)"`
@@ -56,7 +54,7 @@ type Employees struct {
 
 	WorkingDays []WorkingDays `db:"fk:EmployeeId"`
 
-	UserId *uuid.UUID
+	UserId string `db:"foreignkey(Users.Id);varchar(36)"` // foreign key to Users table
 }
 type WorkingDays struct {
 	Id         int    `db:"pk;df:auto"`

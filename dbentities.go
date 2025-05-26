@@ -202,9 +202,26 @@ func (ctx *DBXTenant) pgInsert(tblInfo *EntityType, entity interface{}) error {
 		return err
 	}
 	defer rw.Close()
+	cols, err := rw.Columns()
+	if err != nil {
+		return err
+	}
+	if len(cols) != 1 {
+		return fmt.Errorf("insert failed, expect 1 column, but got %d", len(cols))
+	}
+	insertedId := 0
+	for rw.Next() {
+		err := rw.Scan(&insertedId)
+		if err != nil {
+			return err
+		}
+	}
+	if err != nil {
+		return err
+	}
 
 	for rw.Next() {
-		err := scanRowToStruct(rw, entity) // thay may cai vong lap o duoi ban ham nay chay OK
+		err := scanRowToStruct(rw, entity, cols) // thay may cai vong lap o duoi ban ham nay chay OK
 		if err != nil {
 			return err
 		}

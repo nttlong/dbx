@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -48,9 +49,18 @@ func (c *Cfg) makeDnsMySql(dbname string) string {
 func (c *Cfg) makeDnsMssql(dbname string) string {
 	ret := ""
 	if dbname == "" {
-		ret = fmt.Sprintf("sqlserver://%s:%s@%s:%d", c.User, c.Password, c.Host, c.Port)
+		if c.Port > 0 {
+			ret = fmt.Sprintf("sqlserver://%s:%s@%s:%d", c.User, c.Password, c.Host, c.Port)
+		} else {
+			ret = fmt.Sprintf("sqlserver://%s:%s@%s", c.User, c.Password, c.Host)
+		}
 	} else {
-		ret = fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=%s", c.User, c.Password, c.Host, c.Port, dbname)
+		if c.Port > 0 {
+			ret = fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=%s", c.User, c.Password, c.Host, c.Port, dbname)
+		} else {
+			ret = fmt.Sprintf("sqlserver://%s:%s@%s?database=%s", c.User, c.Password, c.Host, dbname)
+		}
+
 	}
 	return ret
 }
@@ -216,12 +226,17 @@ func (r *Rows) Scan(dest interface{}) error {
 
 	// Lấy kiểu phần tử của slice
 	elemType := sliceVal.Type().Elem()
+	cols, err := r.Rows.Columns()
+	if err != nil {
+		return err
+
+	}
 
 	for r.Rows.Next() {
 		// Tạo một phần tử mới kiểu elemType
 		elemPtr := reflect.New(elemType) // tạo *T
 		// scanRowToStruct cần *sql.Rows và interface{}
-		err := scanRowToStruct(r.Rows, elemPtr.Interface())
+		err := scanRowToStruct(r.Rows, elemPtr.Interface(), cols)
 		if err != nil {
 			return err
 		}
@@ -304,7 +319,10 @@ func Find[T any](args ...interface{}) func(dbx *DBXTenant) ([]T, error) {
 
 			eType := reflect.TypeFor[T]()
 			sqlSelect := "SELECT * FROM " + eType.Name()
+			start := time.Now()
 			rows, err := dbx.Query(sqlSelect, args...)
+			n := time.Since(start).Milliseconds()
+			fmt.Println("Query time: ", n, "ms")
 			if err != nil {
 				return nil, err
 			}
@@ -312,26 +330,36 @@ func Find[T any](args ...interface{}) func(dbx *DBXTenant) ([]T, error) {
 
 				return nil, nil
 			}
-			defer rows.Close()
-			var zero T
-			typ := reflect.TypeOf(zero)
-			slice := reflect.MakeSlice(reflect.SliceOf(typ), 0, 0)
-
-			for rows.Next() {
-				var zero T
-				typ := reflect.TypeOf(zero)
-				elem := reflect.New(typ).Interface()
-				err := scanRowToStruct(rows.Rows, elem)
-				if err != nil {
-					return nil, err
-				}
-				slice = reflect.Append(slice, reflect.ValueOf(elem).Elem())
-
+			ret, err := fetchAllRows(rows.Rows, eType)
+			if err != nil {
+				return nil, err
 			}
+			return ret.([]T), nil
+			// defer rows.Close()
+			// var zero T
+			// typ := reflect.TypeOf(zero)
+			// slice := reflect.MakeSlice(reflect.SliceOf(typ), 0, 0)
+			// cols, err := rows.Rows.Columns()
+			// if err != nil {
+			// 	return nil, err
+			// }
+			// start = time.Now()
+			// for rows.Next() {
+			// 	var zero T
+			// 	typ := reflect.TypeOf(zero)
+			// 	elem := reflect.New(typ).Interface()
+			// 	err := scanRowToStruct(rows.Rows, elem, cols)
+			// 	if err != nil {
+			// 		return nil, err
+			// 	}
+			// 	slice = reflect.Append(slice, reflect.ValueOf(elem).Elem())
 
-			ret := slice.Interface().([]T)
+			// }
+			// n = time.Since(start).Milliseconds()
+			// fmt.Println("Fetch time: ", n, "ms")
+			// ret := slice.Interface().([]T)
 
-			return ret, nil
+			// return ret, nil
 
 		}
 	}
@@ -366,11 +394,15 @@ func Find[T any](args ...interface{}) func(dbx *DBXTenant) ([]T, error) {
 				var zero T
 				typ := reflect.TypeOf(zero)
 				slice := reflect.MakeSlice(reflect.SliceOf(typ), 0, 0)
+				cols, err := rows.Rows.Columns()
+				if err != nil {
+					return nil, err
+				}
 				for rows.Next() {
 					var zero T
 					typ := reflect.TypeOf(zero)
 					elem := reflect.New(typ).Interface()
-					err := scanRowToStruct(rows.Rows, elem)
+					err := scanRowToStruct(rows.Rows, elem, cols)
 					if err != nil {
 						return nil, err
 					}
