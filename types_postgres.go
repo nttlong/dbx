@@ -169,7 +169,7 @@ func (e *executorPostgres) getSQlCreateTable(entityType *EntityType) (SqlCommand
 	uniqueIndexCols := entityType.GetUniqueKey()
 
 	for indexName, index := range uniqueIndexCols {
-		sqlIndex := e.createSqlCreateIndexIfNotExists(indexName, entityType.Name(), index)
+		sqlIndex := e.createSqlCreateUniqueIndexIfNotExists(indexName, entityType.Name(), index)
 		ret = append(ret, sqlIndex)
 	}
 	foreignKeyList := entityType.GetForeignKeyRef()

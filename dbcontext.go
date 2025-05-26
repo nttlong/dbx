@@ -3,6 +3,7 @@ package dbx
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -202,8 +203,36 @@ func (dbx *DBXTenant) QueryRow(query string, args ...interface{}) *sql.Row {
 	return dbx.DB.QueryRow(sqlQuery, args...)
 }
 func (r *Rows) Scan(dest interface{}) error {
-	return scanRowToStruct(r.Rows, dest)
+	// dest phải là con trỏ đến slice, ví dụ *[]User
+	destVal := reflect.ValueOf(dest)
+	if destVal.Kind() != reflect.Ptr || destVal.IsNil() {
+		return errors.New("dest must be a non-nil pointer to a slice")
+	}
+
+	sliceVal := destVal.Elem()
+	if sliceVal.Kind() != reflect.Slice {
+		return errors.New("dest must be a pointer to a slice")
+	}
+
+	// Lấy kiểu phần tử của slice
+	elemType := sliceVal.Type().Elem()
+
+	for r.Rows.Next() {
+		// Tạo một phần tử mới kiểu elemType
+		elemPtr := reflect.New(elemType) // tạo *T
+		// scanRowToStruct cần *sql.Rows và interface{}
+		err := scanRowToStruct(r.Rows, elemPtr.Interface())
+		if err != nil {
+			return err
+		}
+
+		// Append phần tử đã scan xong vào slice
+		sliceVal.Set(reflect.Append(sliceVal, elemPtr.Elem()))
+	}
+
+	return r.Rows.Err()
 }
+
 func (r *Rows) ToMap() []map[string]interface{} {
 	cols, err := r.Rows.Columns()
 	if err != nil {
@@ -267,44 +296,144 @@ func (r *Rows) ToJSON() (string, error) {
 	return string(bff), nil
 }
 
-func scanRowToStruct(rows *sql.Rows, dest interface{}) error {
-	destType := reflect.TypeOf(dest)
-	destValue := reflect.ValueOf(dest)
+// get one entity
+// example GetOne[User](&User{ID: 1})(dbx) or GetOne[User]("id=? and name=?", 1, "John")(dbx)
+func Find[T any](args ...interface{}) func(dbx *DBXTenant) ([]T, error) {
+	if len(args) == 0 {
+		return func(dbx *DBXTenant) ([]T, error) {
 
-	if destType.Kind() != reflect.Ptr || destValue.IsNil() {
-		return fmt.Errorf("destination must be a non-nil pointer to a struct")
+			eType := reflect.TypeFor[T]()
+			sqlSelect := "SELECT * FROM " + eType.Name()
+			rows, err := dbx.Query(sqlSelect, args...)
+			if err != nil {
+				return nil, err
+			}
+			if rows == nil {
+
+				return nil, nil
+			}
+			defer rows.Close()
+			var zero T
+			typ := reflect.TypeOf(zero)
+			slice := reflect.MakeSlice(reflect.SliceOf(typ), 0, 0)
+
+			for rows.Next() {
+				var zero T
+				typ := reflect.TypeOf(zero)
+				elem := reflect.New(typ).Interface()
+				err := scanRowToStruct(rows.Rows, elem)
+				if err != nil {
+					return nil, err
+				}
+				slice = reflect.Append(slice, reflect.ValueOf(elem).Elem())
+
+			}
+
+			ret := slice.Interface().([]T)
+
+			return ret, nil
+
+		}
 	}
+	if len(args) == 1 {
+		conType := reflect.TypeOf(args[0])
+		fmt.Println(conType.Kind().String())
+		if conType.Kind() == reflect.Ptr {
+			conType = conType.Elem()
+		}
+		if conType.Kind() != reflect.Struct && conType != reflect.TypeOf("") {
+			return func(dbx *DBXTenant) ([]T, error) {
 
-	structType := destType.Elem()
-	if structType.Kind() != reflect.Struct {
-		return fmt.Errorf("destination must be a pointer to a struct")
-	}
+				return nil, fmt.Errorf("invalid entity or query condition: %v", args)
+			}
+		}
+		if conType.Kind() == reflect.Struct {
 
-	columns, err := rows.Columns()
-	if err != nil {
-		return err
-	}
+			return func(dbx *DBXTenant) ([]T, error) {
+				mapCon := getSetValues(args[0])
+				strWhere, args := createWhereFromMap(mapCon)
+				eType := reflect.TypeFor[T]()
+				sqlSelect := "SELECT * FROM " + eType.Name() + " WHERE " + strWhere
+				rows, err := dbx.Query(sqlSelect, args...)
+				if err != nil {
+					return nil, err
+				}
+				if rows == nil {
 
-	scanArgs := make([]interface{}, len(columns))
-	fields := make([]reflect.Value, len(columns))
+					return nil, nil
+				}
+				defer rows.Close()
+				var zero T
+				typ := reflect.TypeOf(zero)
+				slice := reflect.MakeSlice(reflect.SliceOf(typ), 0, 0)
+				for rows.Next() {
+					var zero T
+					typ := reflect.TypeOf(zero)
+					elem := reflect.New(typ).Interface()
+					err := scanRowToStruct(rows.Rows, elem)
+					if err != nil {
+						return nil, err
+					}
+					slice = reflect.Append(slice, reflect.ValueOf(elem).Elem())
 
-	for i, col := range columns {
-		field := destValue.Elem().FieldByName(col)
-		// chac chan la tim duoc vi sau sql select duoc sinh ra tu cac field cua struct
-		if field.IsValid() && field.CanSet() {
-			fields[i] = field
-			scanArgs[i] = field.Addr().Interface()
+				}
+
+				return slice.Interface().([]T), nil
+
+			}
+
 		} else {
-			// Nếu không tìm thấy field phù hợp, vẫn cần một nơi để scan giá trị
-			var dummy interface{}
-			scanArgs[i] = &dummy
+			var zero T
+			typ := reflect.TypeOf(zero)
+			val := reflect.Zero(typ)
+			return func(dbx *DBXTenant) ([]T, error) {
+				return val.Interface().([]T), fmt.Errorf("invalid entity or query condition: %v", args)
+			}
+		}
+
+	}
+	return func(dbx *DBXTenant) ([]T, error) {
+
+		return nil, errors.New("not support yet")
+	}
+}
+func getSetValues(val interface{}) map[string]interface{} {
+
+	v := reflect.ValueOf(val)
+	t := reflect.TypeOf(val)
+	result := make(map[string]interface{})
+
+	var walk func(v reflect.Value, t reflect.Type, prefix string)
+	walk = func(v reflect.Value, t reflect.Type, prefix string) {
+		for i := 0; i < v.NumField(); i++ {
+			field := t.Field(i)
+			fv := v.Field(i)
+
+			// Trường hợp embedded
+			if field.Anonymous && field.Type.Kind() == reflect.Struct {
+				walk(fv, field.Type, prefix) // không thêm prefix nếu muốn phẳng
+				continue
+			}
+
+			zero := reflect.Zero(fv.Type()).Interface()
+			if !reflect.DeepEqual(fv.Interface(), zero) {
+				result[prefix+field.Name] = fv.Interface()
+			}
 		}
 	}
 
-	err = rows.Scan(scanArgs...)
-	if err != nil {
-		return err
+	walk(v, t, "")
+	return result
+}
+func createWhereFromMap(m map[string]interface{}) (string, []interface{}) {
+	args := make([]interface{}, 0)
+	where := ""
+	for k, v := range m {
+		if where != "" {
+			where += " AND "
+		}
+		where += k + " =?"
+		args = append(args, v)
 	}
-
-	return nil
+	return where, args
 }

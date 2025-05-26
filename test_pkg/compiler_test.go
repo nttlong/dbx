@@ -3,10 +3,12 @@ package dbx
 import (
 	"database/sql"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nttlong/dbx"
 	"github.com/stretchr/testify/assert"
 )
@@ -150,7 +152,7 @@ func TestInsert(t *testing.T) {
 	for i := 20000; i < 50000; i++ {
 		emp := Employees{
 
-			Code:        fmt.Sprintf("EMP%.8d", i),
+			Code:        fmt.Sprintf("EMP-A%.8d", i),
 			BasicSalary: 1000000,
 			BaseInfo: BaseInfo{
 				CreatedOn:   time.Now(),
@@ -180,4 +182,103 @@ func TestInsert(t *testing.T) {
 		assert.NoError(t, err)
 	}
 	fmt.Println("Average time in ms ", avg/int64(50000-20000))
+}
+func TestSelect(t *testing.T) {
+	TestDbxConnect(t)
+	TenantDb.Open()
+
+	type EmpOrder struct {
+		STT  int
+		Code string
+	}
+	var emps []EmpOrder
+	rs, err := TenantDb.Query("select row_number() STT,Employees.* from employees where employeeid <= ? order by employeeid,createdOn asc", 1000)
+	if err != nil {
+		fmt.Println(err)
+	}
+	err = rs.Scan(&emps)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(len(emps))
+	assert.NoError(t, err)
+}
+func TestInsertUser(t *testing.T) {
+	TestDbxConnect(t)
+	TenantDb.Open()
+	rw, err := TenantDb.Query("select * from users where username = 'admin'")
+	u := []Users{}
+	err = rw.Scan(&u)
+	if err != nil {
+		println(err)
+	}
+	user := Users{
+		Id:           uuid.New(),
+		Username:     "admin",
+		HashPassword: "123456",
+	}
+	err = TenantDb.Insert(&user)
+	if err != nil {
+		fmt.Println(err)
+	}
+	assert.NoError(t, err)
+}
+func TestFindOne(t *testing.T) {
+	TestDbxConnect(t)
+	TenantDb.Open()
+	//emp := Employees{}
+	defer TenantDb.Close()
+	avg := int64(0)
+	for i := 0; i < 10000; i++ {
+		start := time.Now()
+		usr, err := dbx.Find[Employees]()(TenantDb)
+		n := time.Since(start).Milliseconds()
+		avg += n
+		fmt.Println("Elapse time in ms ", n)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println(len(usr))
+		assert.NoError(t, err)
+	}
+	fmt.Println("Average time in ms ", avg/int64(10000))
+}
+func TestSelect2(t *testing.T) {
+	type EmpList struct {
+		Code string
+	}
+	fn := func(property interface{}, val interface{}) {
+		propVal := reflect.ValueOf(property)
+		if propVal.Kind() != reflect.Ptr || propVal.IsNil() {
+			panic("property must be a non-nil pointer")
+		}
+
+		valVal := reflect.ValueOf(val)
+
+		// Ép kiểu nếu cần thiết (ví dụ int -> string)
+		if propVal.Elem().Kind() == reflect.String && valVal.Kind() != reflect.String {
+			valVal = reflect.ValueOf(fmt.Sprintf("%v", val))
+		}
+
+		// Set giá trị
+		propVal.Elem().Set(valVal)
+	}
+	emp := EmpList{}
+	fn(&emp.Code, 1234)
+	assert.Equal(t, "1234", emp.Code)
+
+}
+
+func TestExpr(t *testing.T) {
+
+	data := dbx.Queryable[Employees]{
+		Entity: Employees{
+			Code: "EMP00000001",
+		},
+	}
+	data.Entity.BaseInfo.CreatedOn = time.Now()
+	for k, v := range data.GetSetValues() {
+		fmt.Println(k, v)
+	}
 }

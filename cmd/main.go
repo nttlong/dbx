@@ -67,7 +67,8 @@ type WorkingDays struct {
 	EmployeeId int `db:"foreignkey(Employees.EmployeeId)"`
 }
 
-func main1() {
+func main() {
+	dbx.AddEntities(&Employees{}, &Departments{}, &Users{}, &WorkingDays{})
 	db := dbx.NewDBX(dbx.Cfg{
 		Driver:   "postgres",
 		Host:     "localhost",
@@ -88,7 +89,7 @@ func main1() {
 	for i := 0; i < 1000; i++ {
 		emp := Employees{
 
-			Code:        fmt.Sprintf("EMP-1-%.8d", i),
+			Code:        fmt.Sprintf("EMP-1A-%.8d", i),
 			BasicSalary: 1000000,
 			BaseInfo: BaseInfo{
 				CreatedOn:   time.Now(),
@@ -122,7 +123,8 @@ func main1() {
 	}
 	fmt.Println("Average time in ms ", avg/int64(1000))
 }
-func main() {
+func main1() {
+	dbx.AddEntities(&Employees{}, &Departments{}, &Users{}, &WorkingDays{})
 	db := dbx.NewDBX(dbx.Cfg{
 		Driver:   "mysql",
 		Host:     "localhost",
@@ -143,7 +145,7 @@ func main() {
 	for i := 0; i < 1000; i++ {
 		emp := Employees{
 
-			Code:        fmt.Sprintf("EMPF-%.8d", i),
+			Code:        fmt.Sprintf("EMPG-%.8d", i),
 			BasicSalary: 1000000,
 			BaseInfo: BaseInfo{
 				CreatedOn:   time.Now(),

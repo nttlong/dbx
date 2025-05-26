@@ -8,7 +8,7 @@ import (
 
 type BaseInfo struct {
 	CreatedOn   time.Time  `db:"df:now();idx"`
-	CreatedBy   string     `db:"nvarchar(50);idx"`
+	CreatedBy   string     `db:"nvarchar(50);idx;df:admin"`
 	UpdatedOn   *time.Time `db:"idx"`
 	UpdatedBy   *string    `db:"nvarchar(50);idx"`
 	Description *string
@@ -42,6 +42,7 @@ type Users struct {
 	Username     string     `db:"nvarchar(50);unique;idx"` // unique username
 	HashPassword string     `db:"nvarchar(400)"`
 	Emp          *Employees `db:"fk:UserId"`
+	BaseInfo
 }
 type Employees struct {
 	BaseInfo

@@ -106,3 +106,25 @@ func TestMySQLInsert(t *testing.T) {
 	}
 	fmt.Println("Average time in ms ", avg/int64(50000-20000))
 }
+func TestMySqlFindOne(t *testing.T) {
+	TestMysql(t)
+	TestMysqlGetTenant(t)
+	TenantMysql.Open()
+	//emp := Employees{}
+	defer TenantMysql.Close()
+	avg := int64(0)
+	for i := 0; i < 10000; i++ {
+		start := time.Now()
+		usr, err := dbx.Find[Employees]()(&TenantMysql)
+		n := time.Since(start).Milliseconds()
+		avg += n
+		fmt.Println("Elapse time in ms ", n)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println(len(usr))
+		assert.NoError(t, err)
+	}
+	fmt.Println("Average time in ms ", avg/int64(10000))
+}
