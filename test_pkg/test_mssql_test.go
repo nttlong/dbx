@@ -47,13 +47,13 @@ func TestMssqlInsert(t *testing.T) {
 	TestMssqlCreateTenant(t)
 	assert.NotEmpty(t, MssqlTenantDb)
 	MssqlTenantDb.Open()
-	MssqlTenantDb.Open()
+
 	defer TenantMysql.Close()
 	avg := int64(0)
-	for i := 20000; i < 50000; i++ {
+	for i := 0; i < 50000; i++ {
 		emp := Employees{
 
-			Code:        fmt.Sprintf("EMPoo%.8d", i),
+			Code:        fmt.Sprintf("EMP%.8d", i),
 			BasicSalary: 1000000,
 			BaseInfo: BaseInfo{
 				CreatedOn:   time.Now(),

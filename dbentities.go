@@ -342,7 +342,12 @@ func (ctx *DBXTenant) mssqlInsert(tblInfo *EntityType, entity interface{}) error
 
 	// Thực thi truy vấn bằng ctx.DB.QueryRow() thay vì tx.QueryRow()
 	// Đây là nơi thực thi câu lệnh SQL và scan kết quả ID
-	err = ctx.DB.QueryRow(*execSql2, dataInsert.Params...).Scan(&insertedNullId)
+
+	qr := ctx.DB.QueryRow(*execSql2, dataInsert.Params...)
+	if qr.Err() != nil {
+		return qr.Err()
+	}
+	qr.Scan(&insertedNullId)
 	if err != nil {
 		// Không có rollback vì không dùng transaction
 		return fmt.Errorf("lỗi khi thực thi INSERT hoặc scan ID: %w", err)
