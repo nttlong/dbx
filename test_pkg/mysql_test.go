@@ -115,7 +115,7 @@ func TestMySqlFindOne(t *testing.T) {
 	avg := int64(0)
 	for i := 0; i < 10000; i++ {
 		start := time.Now()
-		usr, err := dbx.Find[Employees]()(&TenantMysql)
+		usr, err := dbx.Find[Employees]("len(code)>=?", 2)(&TenantMysql)
 		n := time.Since(start).Milliseconds()
 		avg += n
 		fmt.Println("Elapse time in ms ", n)

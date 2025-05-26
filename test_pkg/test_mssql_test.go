@@ -36,7 +36,7 @@ func TestMssql(t *testing.T) {
 func TestMssqlCreateTenant(t *testing.T) {
 	TestMssql(t)
 	assert.NotEmpty(t, MssqlDbx)
-	tenantDb, err := MssqlDbx.GetTenant("a0002")
+	tenantDb, err := MssqlDbx.GetTenant("dbTest")
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -53,7 +53,7 @@ func TestMssqlInsert(t *testing.T) {
 	for i := 0; i < 50000; i++ {
 		emp := Employees{
 
-			Code:        fmt.Sprintf("EMP%.8d", i),
+			Code:        fmt.Sprintf("A%.8d", i),
 			BasicSalary: 1000000,
 			BaseInfo: BaseInfo{
 				CreatedOn:   time.Now(),
@@ -87,4 +87,26 @@ func TestMssqlInsert(t *testing.T) {
 	}
 	fmt.Println("Average time in ms ", avg/int64(50000-20000))
 
+}
+func TestMsSQLFind(t *testing.T) {
+	TestMssqlCreateTenant(t)
+	assert.NotEmpty(t, MssqlTenantDb)
+	MssqlTenantDb.Open()
+
+	defer TenantMysql.Close()
+	avg := int64(0)
+	for i := 0; i < 10000; i++ {
+		start := time.Now()
+		usr, err := dbx.Find[Employees]("len(code)>=?", 2)(MssqlTenantDb)
+		n := time.Since(start).Milliseconds()
+		avg += n
+		fmt.Println("Elapse time in ms ", n)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println(len(usr))
+		assert.NoError(t, err)
+	}
+	fmt.Println("Average time in ms ", avg/int64(10000))
 }

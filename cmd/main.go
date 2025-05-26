@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/nttlong/dbx"
 )
 
@@ -40,7 +39,7 @@ type Departments struct {
 	Description *string
 }
 type Users struct {
-	Id           uuid.UUID  `db:"pk;df:uuid()"`
+	Id           string     `db:"pk;varchar(36)"`
 	Username     string     `db:"nvarchar(50);unique;idx"` // unique username
 	HashPassword string     `db:"nvarchar(400)"`
 	Emp          *Employees `db:"fk:UserId"`
@@ -57,7 +56,7 @@ type Employees struct {
 
 	WorkingDays []WorkingDays `db:"fk:EmployeeId"`
 
-	UserId *uuid.UUID
+	UserId *string `db:"varchar(36)"`
 }
 type WorkingDays struct {
 	Id         int    `db:"pk;df:auto"`
@@ -67,85 +66,45 @@ type WorkingDays struct {
 	EmployeeId int `db:"foreignkey(Employees.EmployeeId)"`
 }
 
-func main() {
-	dbx.AddEntities(&Employees{}, &Departments{}, &Users{}, &WorkingDays{})
-	db := dbx.NewDBX(dbx.Cfg{
+func getPgConfig() dbx.Cfg {
+	return dbx.Cfg{
 		Driver:   "postgres",
 		Host:     "localhost",
 		Port:     5432,
 		User:     "postgres",
 		Password: "123456",
 		SSL:      false,
-	})
-	db.Open()
-	defer db.Close()
-	TenantDb, err := db.GetTenant("a0001")
-	if err != nil {
-		panic(err)
 	}
-	TenantDb.Open()
-	defer TenantDb.Close()
-	avg := int64(0)
-	for i := 0; i < 1000; i++ {
-		emp := Employees{
-
-			Code:        fmt.Sprintf("EMP-1A-%.8d", i),
-			BasicSalary: 1000000,
-			BaseInfo: BaseInfo{
-				CreatedOn:   time.Now(),
-				CreatedBy:   "test_user",
-				UpdatedOn:   nil,
-				UpdatedBy:   nil,
-				Description: nil,
-			},
-			Persons: Persons{
-				FirstName: "John",
-				LastName:  "Doe",
-				Gender:    true,
-				BirthDate: time.Now(),
-				Address:   "test_address",
-				Phone:     "test_phone",
-				Email:     "test_email",
-			},
-		}
-		start := time.Now()
-		err := TenantDb.Insert(&emp)
-		if err != nil {
-			fmt.Println(err)
-		}
-		n := time.Since(start).Milliseconds()
-		avg += n
-		fmt.Println("Elapse time in ms ", n)
-		if err != nil {
-			fmt.Println(err)
-		}
-
-	}
-	fmt.Println("Average time in ms ", avg/int64(1000))
 }
-func main1() {
-	dbx.AddEntities(&Employees{}, &Departments{}, &Users{}, &WorkingDays{})
-	db := dbx.NewDBX(dbx.Cfg{
+func getMysqlConfig() dbx.Cfg {
+	return dbx.Cfg{
 		Driver:   "mysql",
 		Host:     "localhost",
 		Port:     3306,
 		User:     "root",
 		Password: "123456",
 		SSL:      false,
-	})
-	db.Open()
-	defer db.Close()
-	TenantDb, err := db.GetTenant("tenant1")
-	if err != nil {
-		panic(err)
 	}
+}
+func getMssqlConfig() dbx.Cfg {
+	return dbx.Cfg{
+		Driver: "mssql",
+		Host:   "MSI/SQLEXPRESS",
+		// Port:     1433,
+		User:     "sa",
+		Password: "123456",
+		SSL:      false,
+	}
+}
+func insertData(TenantDb *dbx.DBXTenant) {
+
 	TenantDb.Open()
 	defer TenantDb.Close()
 	avg := int64(0)
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 100000; i++ {
 		emp := Employees{
 
-			Code:        fmt.Sprintf("EMPG-%.8d", i),
+			Code:        fmt.Sprintf("EMP-2A-%.8d", i),
 			BasicSalary: 1000000,
 			BaseInfo: BaseInfo{
 				CreatedOn:   time.Now(),
@@ -177,5 +136,42 @@ func main1() {
 		}
 
 	}
-	fmt.Println("Average time in ms ", avg/int64(1000))
+	fmt.Println("Average time in ms ", avg/int64(100000))
+}
+func loadData(TenantDb *dbx.DBXTenant) {
+	avg := int64(0)
+	for i := 0; i < 10000; i++ {
+		start := time.Now()
+		usr, err := dbx.Find[Employees]("len(code)>=?", 2)(TenantDb)
+		n := time.Since(start).Milliseconds()
+		avg += n
+		fmt.Println("Elapse time in ms ", n)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println(len(usr))
+
+	}
+	fmt.Println("Average time in ms ", avg/int64(10000))
+}
+func main() {
+	dbx.AddEntities(&Employees{}, &Departments{}, &Users{}, &WorkingDays{})
+	db := dbx.NewDBX(getMysqlConfig())
+	err := db.Open()
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	TenantDb, err := db.GetTenant("dbTest")
+
+	if err != nil {
+		panic(err)
+	}
+
+	TenantDb.Open()
+	defer TenantDb.Close()
+	// insertData(TenantDb)
+	loadData(TenantDb)
+
 }

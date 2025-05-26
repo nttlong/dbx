@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -85,6 +84,7 @@ type parseInsertInfo struct {
 	// ReturnColAfterInsert []string
 	SqlInsert    string
 	keyColsNames []string
+	Cols         []string // all columns in table
 }
 
 type ICompiler interface {
@@ -199,6 +199,9 @@ func (dbx *DBXTenant) Exec(query string, args ...interface{}) (sql.Result, error
 	return dbx.DB.Exec(sqlExec, args...)
 }
 func (dbx *DBXTenant) Query(query string, args ...interface{}) (*Rows, error) {
+	if dbx.compiler == nil {
+		return nil, fmt.Errorf("compiler is nil")
+	}
 	sqlQuery, err := dbx.compiler.Parse(query)
 	if err != nil {
 		return nil, err
@@ -323,10 +326,9 @@ func Find[T any](args ...interface{}) func(dbx *DBXTenant) ([]T, error) {
 
 			eType := reflect.TypeFor[T]()
 			sqlSelect := "SELECT * FROM " + eType.Name()
-			start := time.Now()
+
 			rows, err := dbx.Query(sqlSelect, args...)
-			n := time.Since(start).Milliseconds()
-			fmt.Println("Query time: ", n, "ms")
+
 			if err != nil {
 				return nil, err
 			}
@@ -339,31 +341,6 @@ func Find[T any](args ...interface{}) func(dbx *DBXTenant) ([]T, error) {
 				return nil, err
 			}
 			return ret.([]T), nil
-			// defer rows.Close()
-			// var zero T
-			// typ := reflect.TypeOf(zero)
-			// slice := reflect.MakeSlice(reflect.SliceOf(typ), 0, 0)
-			// cols, err := rows.Rows.Columns()
-			// if err != nil {
-			// 	return nil, err
-			// }
-			// start = time.Now()
-			// for rows.Next() {
-			// 	var zero T
-			// 	typ := reflect.TypeOf(zero)
-			// 	elem := reflect.New(typ).Interface()
-			// 	err := scanRowToStruct(rows.Rows, elem, cols)
-			// 	if err != nil {
-			// 		return nil, err
-			// 	}
-			// 	slice = reflect.Append(slice, reflect.ValueOf(elem).Elem())
-
-			// }
-			// n = time.Since(start).Milliseconds()
-			// fmt.Println("Fetch time: ", n, "ms")
-			// ret := slice.Interface().([]T)
-
-			// return ret, nil
 
 		}
 	}
@@ -394,29 +371,16 @@ func Find[T any](args ...interface{}) func(dbx *DBXTenant) ([]T, error) {
 
 					return nil, nil
 				}
-				defer rows.Close()
-				var zero T
-				typ := reflect.TypeOf(zero)
-				slice := reflect.MakeSlice(reflect.SliceOf(typ), 0, 0)
-				cols, err := rows.Rows.Columns()
+				ret, err := fetchAllRows(rows.Rows, eType)
 				if err != nil {
 					return nil, err
 				}
-				for rows.Next() {
-					var zero T
-					typ := reflect.TypeOf(zero)
-					elem := reflect.New(typ).Interface()
-					err := scanRowToStruct(rows.Rows, elem, cols)
-					if err != nil {
-						return nil, err
-					}
-					slice = reflect.Append(slice, reflect.ValueOf(elem).Elem())
-
-				}
-
-				return slice.Interface().([]T), nil
+				return ret.([]T), nil
 
 			}
+
+		} else if conType == reflect.TypeOf("") {
+			fmt.Println(args)
 
 		} else {
 			var zero T
@@ -428,10 +392,43 @@ func Find[T any](args ...interface{}) func(dbx *DBXTenant) ([]T, error) {
 		}
 
 	}
+	sql := args[0]
+	sqlType := reflect.TypeOf(sql)
+	if sqlType.Kind() == reflect.Ptr {
+		sqlType = sqlType.Elem()
+	}
+	if sqlType.Kind() == reflect.String {
+
+		where := sql.(string)
+		return doFindEntities[T](where, args[1:]...)
+
+	}
+
 	return func(dbx *DBXTenant) ([]T, error) {
 
 		return nil, errors.New("not support yet")
 	}
+}
+func doFindEntities[T any](where string, args ...interface{}) func(dbx *DBXTenant) ([]T, error) {
+	var zero T
+	et := reflect.TypeOf(zero)
+	entityType, err := newEntityType(et)
+	if err != nil {
+		return func(dbx *DBXTenant) ([]T, error) { return nil, err }
+	}
+	sqlSelect := "SELECT * FROM " + entityType.TableName + " WHERE " + where
+	return func(dbx *DBXTenant) ([]T, error) {
+		rows, err := dbx.Query(sqlSelect, args...)
+		if err != nil {
+			return nil, err
+		}
+		ret, er := fetchAllRows(rows.Rows, et)
+		if er != nil {
+			return nil, er
+		}
+		return ret.([]T), nil
+	}
+
 }
 func getSetValues(val interface{}) map[string]interface{} {
 

@@ -132,14 +132,19 @@ func (e *executorMySql) makeSQlCreateTable(primaryKey []*EntityField, tableName 
 	keyColsNames := make([]string, 0)
 	//primaryStr := make([]string, 0)
 	for _, field := range primaryKey {
+		collation := ""
 		fieldType := mapGoTypeToMySqlType[field.Type]
 		if field.DefaultValue == "auto" {
 			fieldType = "INT AUTO_INCREMENT "
 		}
 		if field.MaxLen > 0 && fieldType == "TEXT" {
+			collation = " COLLATE utf8mb3_general_ci"
 			fieldType = "NVARCHAR(" + strconv.Itoa(field.MaxLen) + ")"
 		}
 		strKeyColName := e.quote(field.Name) + " " + fieldType + " PRIMARY KEY "
+		if collation != "" {
+			strKeyColName += collation
+		}
 
 		keyColsNames = append(keyColsNames, strKeyColName)
 		//primaryStr = append(primaryStr, "`"+field.Name+"`")
@@ -201,8 +206,10 @@ func (e *executorMySql) makeAlterTableAddColumn(tableName string, field EntityFi
 		}
 
 	}
+	collation := ""
 	fieldType := mapGoTypeToMySqlType[field.NonPtrFieldType]
 	if field.MaxLen > 0 && fieldType == "TEXT" {
+		collation = " COLLATE utf8mb3_general_ci"
 		fieldType = "VARCHAR(" + strconv.Itoa(field.MaxLen) + ")"
 
 	}
@@ -210,7 +217,9 @@ func (e *executorMySql) makeAlterTableAddColumn(tableName string, field EntityFi
 	if dfValue != "" {
 		sqlCmdCreateTableStr += " DEFAULT " + dfValue
 	}
-
+	if collation != "" {
+		sqlCmdCreateTableStr += collation
+	}
 	return SqlCommandAddColumn{
 		string:    sqlCmdCreateTableStr,
 		TableName: tableName,
@@ -311,7 +320,7 @@ func (e *executorMySql) createDb(dbName string) func(dbMaster DBX, dbTenant DBXT
 	}
 	retFunc := func(dbMaster DBX, dbTenant DBXTenant) error {
 		// Create the database
-		_, err := dbMaster.Exec("CREATE DATABASE IF NOT EXISTS " + dbName)
+		_, err := dbMaster.Exec("CREATE DATABASE IF NOT EXISTS " + dbName + " CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;")
 		if err != nil {
 			return err
 		}

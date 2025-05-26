@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"strings"
 	"sync"
+
+	_ "github.com/microsoft/go-mssqldb"
 )
 
 type CompilerMssql struct {
@@ -33,23 +35,30 @@ func newCompilerMssql(dbName string, db *sql.DB) ICompiler {
 	return compilerMssql
 }
 func (w CompilerMssql) parseInsertSQL(p parseInsertInfo) (*string, error) {
+	//    sqlStmt := "INSERT INTO Employees (Code, FirstName, LastName) OUTPUT INSERTED.EmployeeId VALUES (@p1, @p2, @p3)"
+
 	if len(p.keyColsNames) == 1 {
-		strOutPut := "SELECT ID = convert(bigint, SCOPE_IDENTITY());"
-		sqls := []string{p.SqlInsert + "; " + strOutPut}
-		// sqlGetLastestId := "SELECT LAST_INSERT_ID() INTO @last_id"
-		// sqls = append(sqls, sqlGetLastestId)
-		/**
-			SELECT product_id, product_name, price, stock_quantity, created_at, last_updated
-		FROM products
-		WHERE product_id = @last_id;
-		*/
-		//sqlSelectautoValueCols := "SELECT " + w.Quote.Quote(p.keyColsNames[0]) + "," + w.Quote.Quote(p.DefaultValueCols...) + " from " + w.Quote.Quote(p.TableName) + " where " + w.Quote.Quote(p.keyColsNames[0]) + " = ?"
+		sql1 := strings.Split(p.SqlInsert, "VALUES (")[0]
+		sql2 := strings.Split(p.SqlInsert, "VALUES (")[1]
 
-		sqls = append(sqls) //, sqlSelectautoValueCols)
-		//OUTPUT INSERTED.EmployeeId;
+		sql := sql1 + " OUTPUT INSERTED." + p.keyColsNames[0] + " VALUES (" + sql2
+		return &sql, nil
+		// strOutPut := "SELECT ID = convert(bigint, SCOPE_IDENTITY())"
+		// sqls := []string{p.SqlInsert + "\n" + strOutPut}
+		// // sqlGetLastestId := "SELECT LAST_INSERT_ID() INTO @last_id"
+		// // sqls = append(sqls, sqlGetLastestId)
+		// /**
+		// 	SELECT product_id, product_name, price, stock_quantity, created_at, last_updated
+		// FROM products
+		// WHERE product_id = @last_id;
+		// */
+		// //sqlSelectautoValueCols := "SELECT " + w.Quote.Quote(p.keyColsNames[0]) + "," + w.Quote.Quote(p.DefaultValueCols...) + " from " + w.Quote.Quote(p.TableName) + " where " + w.Quote.Quote(p.keyColsNames[0]) + " = ?"
 
-		p.SqlInsert = strings.Join(sqls, "\n")
-		return &p.SqlInsert, nil
+		// sqls = append(sqls) //, sqlSelectautoValueCols)
+		// //OUTPUT INSERTED.EmployeeId;
+
+		// p.SqlInsert = strings.Join(sqls, "\n")
+		// return &p.SqlInsert, nil
 	}
 
 	return &p.SqlInsert, nil
@@ -160,7 +169,7 @@ func mssqlParseFunction(w Compiler, node Node) (Node, error) {
 			node.V = "CURRENT_TIMESTAMP"
 		}
 		if fnName == "len" {
-			node.V = "LENGTH"
+			node.V = "LEN"
 		}
 	}
 	return node, nil

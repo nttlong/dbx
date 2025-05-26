@@ -342,21 +342,36 @@ func (ctx *DBXTenant) mssqlInsert(tblInfo *EntityType, entity interface{}) error
 
 	// Thực thi truy vấn bằng ctx.DB.QueryRow() thay vì tx.QueryRow()
 	// Đây là nơi thực thi câu lệnh SQL và scan kết quả ID
+	// sqlInsert := strings.Split(*execSql2, "\n")[0]
+	// sqlWithTryCatch := fmt.Sprintf(`
+	// 	BEGIN TRY
+	// 		%s; -- Câu lệnh INSERT gốc
+	// 		SELECT
+	// 			CAST(SCOPE_IDENTITY() AS BIGINT) AS InsertedId,
+	// 			NULL AS ErrorNumber,
+	// 			NULL AS ErrorMessage;
+	// 	END TRY
+	// 	BEGIN CATCH
+	// 		SELECT
+	// 			NULL AS InsertedId,
+	// 			ERROR_NUMBER() AS ErrorNumber,
+	// 			ERROR_MESSAGE() AS ErrorMessage;
+	// 	END CATCH;
+	// 	`, sqlInsert)
+	// sqlExec := "BEGIN\n" + (*execSql2) + "\nEND"
 
 	qr := ctx.DB.QueryRow(*execSql2, dataInsert.Params...)
 	if qr.Err() != nil {
 		return qr.Err()
 	}
-	qr.Scan(&insertedNullId)
+	err = qr.Scan(&insertedNullId)
 	if err != nil {
-		// Không có rollback vì không dùng transaction
-		return fmt.Errorf("lỗi khi thực thi INSERT hoặc scan ID: %w", err)
+		return err
 	}
 
 	// Kiểm tra giá trị NullInt64
 	if insertedNullId.Valid {
 		insertedID := insertedNullId.Int64
-		fmt.Printf("Đã chèn và lấy được EmployeeId: %d\n", insertedID)
 
 		// Gán ID vào entity của bạn (giữ nguyên)
 		entityVal := reflect.ValueOf(entity)
@@ -372,12 +387,8 @@ func (ctx *DBXTenant) mssqlInsert(tblInfo *EntityType, entity interface{}) error
 				idField.SetUint(uint64(insertedID))
 			}
 		} else {
-			fmt.Printf("Cảnh báo: Không thể gán insertedID %d vào trường '%s' của entity\n", insertedID, tblInfo.GetPrimaryKeyName()[0])
+			return fmt.Errorf("cannot set '%s' field", tblInfo.GetPrimaryKeyName()[0])
 		}
-	} else {
-		// Nếu SCOPE_IDENTITY() trả về NULL, có nghĩa là INSERT thất bại.
-		// Không có transaction, nên không có gì để rollback.
-		return fmt.Errorf("không thể lấy EmployeeId: SCOPE_IDENTITY() trả về NULL. Có thể INSERT thất bại do vi phạm ràng buộc.")
 	}
 
 	return nil // Trả về nil nếu mọi thứ thành công
