@@ -2,6 +2,7 @@ package dbx
 
 import (
 	"database/sql"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -160,6 +161,10 @@ func onCompilerMssql(w Compiler, node Node) (Node, error) {
 		return mssqlParseFunction(w, node)
 
 	}
+	if node.Nt == OffsetAndLimit {
+		return node, nil
+
+	}
 	return node, nil
 }
 func mssqlParseFunction(w Compiler, node Node) (Node, error) {
@@ -173,4 +178,51 @@ func mssqlParseFunction(w Compiler, node Node) (Node, error) {
 		}
 	}
 	return node, nil
+}
+func (w CompilerMssql) Parse(sql string) (string, error) {
+	sql, err := w.Compiler.Parse(sql)
+	if err != nil {
+		return "", err
+	}
+	selectStr := strings.Split(sql, " --select-- ")[0]
+	fromClause := strings.Split(sql, " --select-- ")[1]
+	realFromClause := fromClause
+	limit := -1
+	if strings.Contains(fromClause, "%LIMIT%(") {
+		realFromClause = strings.Split(realFromClause, "%LIMIT%(")[0]
+		limitClause := strings.Split(fromClause, "%LIMIT%(")[1]
+		limitClause = strings.Split(limitClause, ")")[0]
+		limit, err = strconv.Atoi(limitClause)
+		if err != nil {
+			return "", err
+		}
+	}
+	offset := -1
+	if strings.Contains(fromClause, "%OFFSET%(") {
+		realFromClause = strings.Split(realFromClause, "%OFFSET%(")[0]
+		offsetClause := strings.Split(fromClause, "%OFFSET%(")[1]
+		offsetClause = strings.Split(offsetClause, ")")[0]
+		offset, err = strconv.Atoi(offsetClause)
+		if err != nil {
+			return "", err
+		}
+	}
+	retSQL := selectStr + " " + realFromClause
+	if limit > -1 && offset == -1 {
+		retSQL = selectStr + " TOP(" + strconv.Itoa(limit) + ") " + realFromClause
+	} else if offset > -1 && limit == -1 {
+		/*
+					SELECT column1, column2
+			FROM table_name
+			ORDER BY column
+			OFFSET m ROWS FETCH NEXT n ROWS ONLY;
+		*/
+		retSQL = selectStr + " " + realFromClause + " OFFSET " + strconv.Itoa(offset) + " ROWS"
+	} else if offset > -1 && limit > -1 {
+		retSQL = selectStr + " " + realFromClause + " OFFSET " + strconv.Itoa(offset) + " ROWS FETCH NEXT " + strconv.Itoa(limit) + " ROWS ONLY"
+	}
+	return retSQL, nil
+
+	// sql looks like "SELECT --select-- * FROM [Employees] %LIMIT%(1)"
+
 }

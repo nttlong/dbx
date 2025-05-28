@@ -163,6 +163,8 @@ func fetchAllRows1(rows *sql.Rows, typ reflect.Type) (interface{}, error) {
 	}
 	return slice.Interface(), nil
 }
+
+// fastest fetchAllRows unsafe mode
 func fetchAllRows(rows *sql.Rows, typ reflect.Type) (interface{}, error) {
 	defer rows.Close()
 

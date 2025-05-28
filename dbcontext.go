@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -198,6 +199,98 @@ func (dbx *DBXTenant) Exec(query string, args ...interface{}) (sql.Result, error
 	}
 	return dbx.DB.Exec(sqlExec, args...)
 }
+
+// applySliceArgsToQuery processes a query and args, expanding placeholders for slices and flattening args.
+// Example:
+//
+//	query: "SELECT * FROM users WHERE id IN (?) AND name = ?"
+//	args: []interface{}{[]int{1, 2, 3}, "John"}
+//	Returns: "SELECT * FROM users WHERE id IN (?,?,?) AND name = ?", []interface{}{1, 2, 3, "John"}
+func applySliceArgsToQuery(query string, args []interface{}) (string, []interface{}) {
+	// If no arguments are provided, return the query and args as is.
+	// Nếu không có đối số nào được cung cấp, trả về truy vấn và đối số nguyên bản.
+	if len(args) == 0 {
+		return query, args
+	}
+
+	// Split the query by the placeholder '?' to identify query parts.
+	// Tách truy vấn thành các phần dựa trên placeholder '?' để xác định các phần của truy vấn.
+	parts := strings.Split(query, "?")
+	// If the number of placeholders doesn't match the number of arguments,
+	// it indicates a potential mismatch or an invalid query for this function's purpose.
+	// In such cases, return the original query and args without modification.
+	// Nếu số lượng placeholder không khớp với số lượng đối số,
+	// điều đó cho thấy một sự không khớp tiềm ẩn hoặc truy vấn không hợp lệ cho mục đích của hàm này.
+	// Trong trường hợp đó, trả về truy vấn và đối số gốc mà không sửa đổi.
+	if len(parts)-1 != len(args) {
+		return query, args
+	}
+
+	// newArgs will hold the flattened list of arguments for the new query.
+	// newArgs sẽ chứa danh sách đối số đã được làm phẳng cho truy vấn mới.
+	newArgs := make([]interface{}, 0)
+	// newQuery will be used to build the modified SQL query string efficiently.
+	// newQuery sẽ được sử dụng để xây dựng chuỗi truy vấn SQL đã sửa đổi một cách hiệu quả.
+	var newQuery strings.Builder
+
+	// Iterate through each argument and its corresponding placeholder position.
+	// Duyệt qua từng đối số và vị trí placeholder tương ứng của nó.
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		// Append the query part that comes before the current placeholder.
+		// Thêm phần truy vấn đứng trước placeholder hiện tại.
+		newQuery.WriteString(parts[i])
+
+		// Use reflect to check if the argument is a slice or an array.
+		// Sử dụng reflect để kiểm tra xem đối số có phải là slice hoặc array không.
+		v := reflect.ValueOf(arg)
+		if v.Kind() == reflect.Slice || v.Kind() == reflect.Array {
+			// Get the length of the slice/array.
+			// Lấy độ dài của slice/array.
+			length := v.Len()
+			if length == 0 {
+				// If the slice is empty, replace the placeholder with "NULL".
+				// This handles cases like `WHERE id IN (NULL)` which is sometimes desirable,
+				// or it might represent `WHERE id IN ()` which SQL databases usually don't support directly.
+				// Nếu slice rỗng, thay thế placeholder bằng "NULL".
+				// Điều này xử lý các trường hợp như `WHERE id IN (NULL)` đôi khi mong muốn,
+				// hoặc nó có thể đại diện cho `WHERE id IN ()` mà các cơ sở dữ liệu SQL thường không hỗ trợ trực tiếp.
+				newQuery.WriteString("NULL")
+				// Skip appending elements from the empty slice to newArgs.
+				// Bỏ qua việc thêm các phần tử từ slice rỗng vào newArgs.
+				continue
+			}
+
+			// Generate the required number of placeholders for the expanded slice (e.g., "?,?,?").
+			// Tạo số lượng placeholder cần thiết cho slice đã mở rộng (ví dụ: "?,?,?").
+			placeholders := strings.Repeat("?,", length)
+			// Append the expanded placeholders, removing the trailing comma.
+			// Thêm các placeholder đã mở rộng, loại bỏ dấu phẩy cuối cùng.
+			newQuery.WriteString(placeholders[:len(placeholders)-1])
+
+			// Flatten the slice/array elements into the newArgs list.
+			// Làm phẳng các phần tử của slice/array vào danh sách newArgs.
+			for j := 0; j < length; j++ {
+				newArgs = append(newArgs, v.Index(j).Interface())
+			}
+		} else {
+			// If the argument is not a slice/array, keep the single placeholder.
+			// Nếu đối số không phải là slice/array, giữ nguyên một placeholder.
+			newQuery.WriteString("?")
+			// Add the original argument to the newArgs list.
+			// Thêm đối số gốc vào danh sách newArgs.
+			newArgs = append(newArgs, arg)
+		}
+	}
+
+	// Append the remaining part of the query after the last placeholder.
+	// Thêm phần còn lại của truy vấn sau placeholder cuối cùng.
+	newQuery.WriteString(parts[len(parts)-1])
+
+	// Return the modified query string and the flattened arguments.
+	// Trả về chuỗi truy vấn đã sửa đổi và các đối số đã được làm phẳng.
+	return newQuery.String(), newArgs
+}
 func (dbx *DBXTenant) Query(query string, args ...interface{}) (*Rows, error) {
 	if dbx.compiler == nil {
 		return nil, fmt.Errorf("compiler is nil")
@@ -206,6 +299,7 @@ func (dbx *DBXTenant) Query(query string, args ...interface{}) (*Rows, error) {
 	if err != nil {
 		return nil, err
 	}
+	sqlQuery, args = applySliceArgsToQuery(sqlQuery, args)
 	ret, err := dbx.DB.Query(sqlQuery, args...)
 	if err != nil {
 		return nil, err
@@ -217,6 +311,7 @@ func (dbx *DBXTenant) QueryRow(query string, args ...interface{}) *sql.Row {
 	if err != nil {
 		return nil
 	}
+	sqlQuery, args = applySliceArgsToQuery(sqlQuery, args)
 	return dbx.DB.QueryRow(sqlQuery, args...)
 }
 func (r *Rows) Scan(dest interface{}) error {
@@ -431,9 +526,16 @@ func doFindEntities[T any](where string, args ...interface{}) func(dbx *DBXTenan
 
 }
 func getSetValues(val interface{}) map[string]interface{} {
-
 	v := reflect.ValueOf(val)
-	t := reflect.TypeOf(val)
+	// Nếu là con trỏ, lấy giá trị bên trong
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return make(map[string]interface{})
+		}
+		v = v.Elem()
+	}
+
+	t := v.Type()
 	result := make(map[string]interface{})
 
 	var walk func(v reflect.Value, t reflect.Type, prefix string)
@@ -455,7 +557,10 @@ func getSetValues(val interface{}) map[string]interface{} {
 		}
 	}
 
-	walk(v, t, "")
+	if v.Kind() == reflect.Struct {
+		walk(v, t, "")
+	}
+
 	return result
 }
 func createWhereFromMap(m map[string]interface{}) (string, []interface{}) {
@@ -469,4 +574,77 @@ func createWhereFromMap(m map[string]interface{}) (string, []interface{}) {
 		args = append(args, v)
 	}
 	return where, args
+}
+func GetOne[T any](dbx *DBXTenant, args ...interface{}) (*T, error) {
+	if len(args) == 0 {
+		return getOneNoCondition[T](dbx)
+	}
+	cond := args[0]
+	typ := reflect.TypeOf(cond)
+	if typ.Kind() == reflect.String {
+		return getOneByCondition[T](dbx, cond.(string), args[1:]...)
+
+	}
+
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("invalid condition type: %v", typ.Kind().String())
+	}
+	condMap := getSetValues(args[0])
+	strWhere, argsParse := createWhereFromMap(condMap)
+	return getOneByCondition[T](dbx, strWhere, argsParse...)
+}
+func getOneNoCondition[T any](dbx *DBXTenant) (*T, error) {
+	var zero T
+	et := reflect.TypeOf(zero)
+	entityType, err := newEntityType(et)
+	if err != nil {
+		return nil, err
+	}
+	sqlSelect := "SELECT * FROM " + entityType.TableName + " LIMIT 1"
+	rows, err := dbx.Query(sqlSelect)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		return nil, nil
+	}
+	ret, err := fetchAllRows(rows.Rows, et)
+	if err != nil {
+		return nil, err
+	}
+	if len(ret.([]T)) == 0 {
+		return nil, nil
+	}
+	retItem := ret.([]T)[0]
+	return &retItem, nil
+}
+func getOneByCondition[T any](dbx *DBXTenant, where string, args ...interface{}) (*T, error) {
+	var zero T
+	et := reflect.TypeOf(zero)
+	entityType, err := newEntityType(et)
+	if err != nil {
+		return nil, err
+	}
+	sqlSelect := "SELECT * FROM " + entityType.TableName + " WHERE " + where + " LIMIT 1"
+	rows, err := dbx.Query(sqlSelect, args...)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		return nil, nil
+	}
+	ret, err := fetchAllRows(rows.Rows, et)
+	if err != nil {
+		return nil, err
+	}
+	if len(ret.([]T)) == 0 {
+		return nil, nil
+	}
+	return &ret.([]T)[0], nil
+}
+func Query[T](dbx *DBXTenant, query string, args ...interface{}) ([]T, error) {
+	return queryEntities[T](dbx, query, args...)
 }

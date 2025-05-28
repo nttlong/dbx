@@ -157,7 +157,7 @@ func loadData(TenantDb *dbx.DBXTenant) {
 }
 func main() {
 	dbx.AddEntities(&Employees{}, &Departments{}, &Users{}, &WorkingDays{})
-	db := dbx.NewDBX(getMysqlConfig())
+	db := dbx.NewDBX(getMssqlConfig())
 	err := db.Open()
 	if err != nil {
 		panic(err)

@@ -93,14 +93,14 @@ func TestMsSQLFind(t *testing.T) {
 	assert.NotEmpty(t, MssqlTenantDb)
 	MssqlTenantDb.Open()
 
-	defer TenantMysql.Close()
+	defer MssqlTenantDb.Close()
 	avg := int64(0)
 	for i := 0; i < 10000; i++ {
 		start := time.Now()
-		usr, err := dbx.Find[Employees]("len(code)>=?", 2)(MssqlTenantDb)
+		usr, err := dbx.Find[Employees]("code like ?", "EMP%")(MssqlTenantDb)
 		n := time.Since(start).Milliseconds()
 		avg += n
-		fmt.Println("Elapse time in ms ", n)
+		fmt.Println("Elapse time in Milliseconds ", n)
 
 		if err != nil {
 			fmt.Println(err)
@@ -108,5 +108,29 @@ func TestMsSQLFind(t *testing.T) {
 		fmt.Println(len(usr))
 		assert.NoError(t, err)
 	}
+	fmt.Println("Average time in Milliseconds ", avg/int64(10000))
+}
+func TestGetOne(t *testing.T) {
+	TestMssqlCreateTenant(t)
+	assert.NotEmpty(t, MssqlTenantDb)
+	MssqlTenantDb.Open()
+
+	defer MssqlTenantDb.Close()
+	avg := int64(0)
+	for i := 0; i < 10000; i++ {
+		start := time.Now()
+		emp, err := dbx.GetOne[Employees](MssqlTenantDb, &Employees{EmployeeId: 1000})
+
+		n := time.Since(start).Milliseconds()
+		avg += n
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(emp.EmployeeId)
+			fmt.Println("Elapse time in ms [", i, "]", n)
+		}
+
+	}
 	fmt.Println("Average time in ms ", avg/int64(10000))
+
 }

@@ -147,7 +147,9 @@ type QuoteIdentifier struct {
 	Left  string
 	Right string
 }
+
 type Compiler struct {
+	ICompiler
 	TableDict  map[string]DbTableDictionaryItem
 	FieldDict  map[string]string
 	Quote      QuoteIdentifier
@@ -208,6 +210,7 @@ func (w Compiler) Parse(sql string) (string, error) {
 		return cached.(SQLParseInfo).SQL, nil
 	}
 	sql, err := w.parse(sql)
+
 	if err != nil {
 		return "", err
 	}
@@ -257,9 +260,13 @@ func (n *Node) IsDate() (*time.Time, bool) {
 	return nil, false
 }
 func (n *Node) IsBool() (bool, bool) {
-	if ret, err := strconv.ParseBool(n.V); err == nil {
-		return ret, true
+	if n.V == "true" {
+		return true, true
 	}
+	if n.V == "false" {
+		return false, true
+	}
+
 	return false, false
 }
 func replaceStringLiteralsWithQuestionMark(sql string) string {
@@ -312,7 +319,7 @@ func (w Compiler) walkOnSelectOnly(stmt *sqlparser.Select, ctx *ParseContext) (s
 		}
 		selector = append(selector, s)
 	}
-	return "SELECT " + strings.Join(selector, ", "), nil
+	return "SELECT --select-- " + strings.Join(selector, ", "), nil
 }
 func (w Compiler) walkSQLNode(node sqlparser.SQLNode, ctx *ParseContext) (string, error) {
 
@@ -326,23 +333,7 @@ func (w Compiler) walkSQLNode(node sqlparser.SQLNode, ctx *ParseContext) (string
 			return n.V + ".*", nil
 
 		}
-		// gGroup := ctx.groupWithAs()
-		// if len(gGroup) > 0 {
-		// 	mapTable := map[string]string{}
-		// 	for _, tn := range ctx.SqlNodes {
-		// 		tnlName, err := w.walkSQLNode(tn, ctx)
-		// 		if err != nil {
-		// 			return "", err
-		// 		}
-		// 		mapTable[strings.ToLower(tnlName)] = tnlName
-		// 	}
-		// 	ret := []string{}
-		// 	for _, tbl := range mapTable {
-		// 		ret = append(ret, tbl+".*")
-		// 	}
-		// 	return strings.Join(ret, ", "), nil
 
-		// }
 		if ctx.TableName != "" {
 			return ctx.TableName + ".*", nil
 		}
@@ -528,31 +519,21 @@ func (w Compiler) walkSQLNode(node sqlparser.SQLNode, ctx *ParseContext) (string
 			if err != nil {
 				return "", err
 			}
-			n, err := w.OnParse(Node{Nt: OffsetAndLimit, Limit: rc})
+
 			if err != nil {
 				return "", err
 			}
-			if n.V == "" {
-				errMsg := fmt.Errorf("It looks like you forget handle Nt value OffsetAndLimit in Resolver function")
-				return "", errMsg
-			}
-			return "LIMIT " + n.V, nil
+
+			return "%LIMIT%(" + rc + ")", nil
 		}
 
 		if fx.Offset != nil && fx.Rowcount == nil {
-			rc, err := w.walkSQLNode(fx.Offset, ctx)
+			off, err := w.walkSQLNode(fx.Offset, ctx)
 			if err != nil {
 				return "", err
 			}
-			n, err := w.OnParse(Node{Nt: OffsetAndLimit, Offset: rc})
-			if err != nil {
-				return "", err
-			}
-			if n.V == "" {
-				errMsg := fmt.Errorf("It looks like you forget handle Nt value OffsetAndLimit in Resolver function")
-				return "", errMsg
-			}
-			return "LIMIT " + n.V, nil
+
+			return "%OFFSET%(" + off + ")", nil
 		}
 		if fx.Offset != nil && fx.Rowcount != nil {
 			ofs, err := w.walkSQLNode(fx.Offset, ctx)
@@ -567,11 +548,8 @@ func (w Compiler) walkSQLNode(node sqlparser.SQLNode, ctx *ParseContext) (string
 			if err != nil {
 				return "", err
 			}
-			if n.V == "" {
-				errMsg := fmt.Errorf("It looks like you forget handle Nt value OffsetAndLimit in Resolver function")
-				return "", errMsg
-			}
-			return n.V, nil
+
+			return "%OFFSET%(" + n.Offset + ")%LIMIT%(" + n.Limit + ")", nil
 		}
 
 	}
@@ -636,9 +614,25 @@ func (w Compiler) walkSQLNode(node sqlparser.SQLNode, ctx *ParseContext) (string
 	if fx, ok := node.(sqlparser.TableIdent); ok {
 		return fx.String(), nil
 	}
+	if fx, ok := node.(sqlparser.ValTuple); ok {
+		return w.walkOnValTuple(fx, ctx)
+
+	}
 
 	panic(fmt.Sprintf("unsupported type %s in parser.walkSQLNode", reflect.TypeOf(node)))
 
+}
+func (w Compiler) walkOnValTuple(expr sqlparser.ValTuple, ctx *ParseContext) (string, error) {
+	ret := []string{}
+	for _, val := range expr {
+		r, err := w.walkSQLNode(val, ctx)
+		if err != nil {
+			return "", err
+		}
+		ret = append(ret, r)
+
+	}
+	return "(" + strings.Join(ret, ", ") + ")", nil
 }
 func (w Compiler) walkOnCaseExpr(expr *sqlparser.CaseExpr, ctx *ParseContext) (string, error) {
 	ret := []string{}
@@ -836,7 +830,7 @@ func (w Compiler) walkOnSelect(stmt *sqlparser.Select, ctx *ParseContext) (strin
 		selectFields = append(selectFields, s)
 
 	}
-	strSelect = "SELECT " + strings.Join(selectFields, ", ")
+	strSelect = "SELECT --select-- " + strings.Join(selectFields, ", ")
 	ret = append(ret, strSelect, strFrom)
 
 	if stmt.GroupBy != nil {
