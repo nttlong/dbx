@@ -645,6 +645,6 @@ func getOneByCondition[T any](dbx *DBXTenant, where string, args ...interface{})
 	}
 	return &ret.([]T)[0], nil
 }
-func Query[T](dbx *DBXTenant, query string, args ...interface{}) ([]T, error) {
-	return queryEntities[T](dbx, query, args...)
+func Query[T any](dbx *DBXTenant, args ...interface{}) ([]T, error) {
+	return Find[T](args...)(dbx)
 }
