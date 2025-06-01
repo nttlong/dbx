@@ -89,7 +89,7 @@ type parseInsertInfo struct {
 }
 
 type ICompiler interface {
-	Parse(sql string) (string, error)
+	Parse(sql string, args ...interface{}) (string, error)
 	parseInsertSQL(p parseInsertInfo) (*string, error)
 
 	LoadDbDictionary(dbName string, db *sql.DB) error
@@ -295,12 +295,14 @@ func (dbx *DBXTenant) Query(query string, args ...interface{}) (*Rows, error) {
 	if dbx.compiler == nil {
 		return nil, fmt.Errorf("compiler is nil")
 	}
-	sqlQuery, err := dbx.compiler.Parse(query)
+	sqlQuery, err := dbx.compiler.Parse(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	sqlQuery, args = applySliceArgsToQuery(sqlQuery, args)
+
 	ret, err := dbx.DB.Query(sqlQuery, args...)
+	fmt.Print(sqlQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -647,4 +649,24 @@ func getOneByCondition[T any](dbx *DBXTenant, where string, args ...interface{})
 }
 func Query[T any](dbx *DBXTenant, args ...interface{}) ([]T, error) {
 	return Find[T](args...)(dbx)
+}
+func Select[T any](dbx *DBXTenant, sql string, args ...interface{}) ([]T, error) {
+	//fx := Select
+	var zero T
+	et := reflect.TypeOf(zero)
+
+	rows, err := dbx.Query(sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	ret, err := fetchAllRows(rows.Rows, et)
+	if err != nil {
+		return nil, err
+	}
+	if len(ret.([]T)) == 0 {
+		return nil, nil
+	}
+	retItem := ret.([]T)
+	return retItem, nil
+
 }

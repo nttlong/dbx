@@ -211,6 +211,10 @@ var mapDefaultValueFuncMssqlMysql = map[string]string{
 }
 
 func (e executorMssql) makeAlterTableAddColumn(tableName string, field EntityField) SqlCommandAddColumn {
+	if field.Type == reflect.TypeOf(FullTextSearchColumn("")) {
+		panic("FullTextSearchColumn is not supported in types_mssql.go at makeAlterTableAddColumn")
+
+	}
 
 	dfValue := ""
 	isNotNull := ""

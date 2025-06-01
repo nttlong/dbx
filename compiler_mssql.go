@@ -179,8 +179,8 @@ func mssqlParseFunction(w Compiler, node Node) (Node, error) {
 	}
 	return node, nil
 }
-func (w CompilerMssql) Parse(sql string) (string, error) {
-	sql, err := w.Compiler.Parse(sql)
+func (w CompilerMssql) Parse(sql string, args ...interface{}) (string, error) {
+	sql, err := w.Compiler.Parse(sql, args)
 	if err != nil {
 		return "", err
 	}

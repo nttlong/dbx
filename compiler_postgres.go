@@ -3,6 +3,7 @@ package dbx
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -126,9 +127,103 @@ func postgresParseFunction(w Compiler, node Node) (Node, error) {
 		v := fmt.Sprintf("EXTRACT(%s FROM %s)", upperFunctionName, node.C[0].V)
 		return Node{Nt: Function, V: v, IsResolved: true}, nil
 	}
+	if functionName == "fulltextsearch" {
+		fieldSearch := node.C[0].V
+		searchText := node.C[1].V
+		//"SearchText_vector" @@ to_tsquery('dbx_simple_unaccent', 'cà & thơm');
+		//"SearchText_vector" @@ to_tsquery('dbx_simple_unaccent', 'cà & thơm');
+		if node.C[1].V[0] == '$' {
+
+			strIndexOfParams := node.C[1].V[1:]
+			indexOfParams, err := strconv.Atoi(strIndexOfParams)
+			if err != nil {
+				return node, err
+			}
+			searchArg := node.ctx.args[indexOfParams-1]
+			if strSearch, ok := searchArg.(string); ok {
+
+				strSearch = strings.Replace(strSearch, " ", " & ", -1)
+				node.ctx.args[indexOfParams-1] = strSearch
+
+			} else {
+
+				return node, fmt.Errorf("search text must be string")
+			}
+
+		} else {
+			searchText = strings.Replace(searchText, " ", " & ", -1)
+		}
+		fieldsSearch := w.Quote.UnQuote(strings.Split(fieldSearch, ".")...)
+		fieldSearch = w.Quote.Quote(strings.Split((fieldsSearch + "_vector"), ".")...)
+
+		node.V = fieldSearch + " @@ to_tsquery('dbx_simple_unaccent', " + searchText + ")"
+		node.C = []Node{}
+		node.IsResolved = true
+		return node, nil
+
+	}
 	return node, nil
 
 }
 func NewCompilerPostgres(dbName string, db *sql.DB) ICompiler {
 	return newCompilerPostgres(dbName, db)
+}
+func (w CompilerPostgres) Parse(sql string, args ...interface{}) (string, error) {
+	sql, err := w.Compiler.Parse(sql, args...)
+
+	if err != nil {
+		return "", err
+	}
+	if !strings.Contains(sql, " --select-- ") {
+		return sql, nil
+	}
+	selectStr := strings.Split(sql, " --select-- ")[0]
+	fromClause := strings.Split(sql, " --select-- ")[1]
+	realFromClause := fromClause
+	limit := -1
+	if strings.Contains(fromClause, "%LIMIT%(") {
+		realFromClause = strings.Split(realFromClause, "%LIMIT%(")[0]
+		limitClause := strings.Split(fromClause, "%LIMIT%(")[1]
+		limitClause = strings.Split(limitClause, ")")[0]
+		limit, err = strconv.Atoi(limitClause)
+		if err != nil {
+			return "", err
+		}
+	}
+	offset := -1
+	if strings.Contains(fromClause, "%OFFSET%(") {
+		realFromClause = strings.Split(realFromClause, "%OFFSET%(")[0]
+		offsetClause := strings.Split(fromClause, "%OFFSET%(")[1]
+		offsetClause = strings.Split(offsetClause, ")")[0]
+		offset, err = strconv.Atoi(offsetClause)
+		if err != nil {
+			return "", err
+		}
+	}
+	retSQL := selectStr + " " + realFromClause
+	if limit > -1 && offset == -1 {
+		//this is postgres so sql compiler will produce sql looks like
+		// SELECT EmployeeId, Code, FirstName, LastName, BasicSalary FROM Employees LIMIT 100;
+		retSQL = selectStr + realFromClause + " LIMIT " + strconv.Itoa(limit)
+	} else if offset > -1 && limit == -1 {
+		/*
+					SELECT column1, column2
+			FROM table_name
+			ORDER BY column
+			OFFSET m ROWS FETCH NEXT n ROWS ONLY;
+		*/
+		retSQL = selectStr + " " + realFromClause + " OFFSET " + strconv.Itoa(offset) + " ROWS"
+	} else if offset > -1 && limit > -1 {
+		/**
+				SELECT column1, column2, ...
+		FROM your_table_name
+		ORDER BY some_column -- RẤT QUAN TRỌNG: Luôn sử dụng ORDER BY khi dùng OFFSET và LIMIT
+		LIMIT 10 OFFSET 100;
+		*/
+		retSQL = selectStr + " " + realFromClause + " LIMIT " + strconv.Itoa(limit) + " OFFSET " + strconv.Itoa(offset)
+	}
+	return retSQL, nil
+
+	// sql looks like "SELECT --select-- * FROM [Employees] %LIMIT%(1)"
+
 }

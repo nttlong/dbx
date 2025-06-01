@@ -18,10 +18,10 @@ type SqlTypeEnum int
 
 const (
 	Unknown SqlTypeEnum = iota
-	Insert
-	Update
-	Delete
-	Select
+	InsertStmt
+	UpdateStmt
+	DeleteStmt
+	SelectStmt
 )
 
 func (s SqlTypeEnum) String() string {
@@ -32,7 +32,7 @@ func (s SqlTypeEnum) String() string {
 		"Delete",
 		"Select",
 	}
-	if s < Insert || s > Select {
+	if s < InsertStmt || s > SelectStmt {
 		return "Unknown"
 	}
 	return names[s]
@@ -90,6 +90,7 @@ type ParseContext struct {
 	SqlType   SqlTypeEnum
 	Owner     Compiler
 	Original  sqlparser.Statement
+	args      []interface{}
 }
 
 type TableMap map[string]string
@@ -105,6 +106,7 @@ type Node struct {
 	Limit      string
 	Un         *UsingNodeOnDelete
 	IsResolved bool // If the node is resolved
+	ctx        *ParseContext
 }
 
 // type DbDmlCmds []*DbDmlCommand
@@ -205,11 +207,11 @@ func (w Compiler) ParseInsertSQL(sql string, autoValueCols []string, returnColAf
 	return &ret, nil
 }
 
-func (w Compiler) Parse(sql string) (string, error) {
+func (w Compiler) Parse(sql string, args ...interface{}) (string, error) {
 	if cached, ok := cacheSqlParse.Load(sql); ok {
 		return cached.(SQLParseInfo).SQL, nil
 	}
-	sql, err := w.parse(sql)
+	sql, err := w.parse(sql, args...)
 
 	if err != nil {
 		return "", err
@@ -273,12 +275,13 @@ func replaceStringLiteralsWithQuestionMark(sql string) string {
 	re := regexp.MustCompile(`('[^'\\]*(?:\\.[^'\\]*)*')`)
 	return re.ReplaceAllString(sql, "?")
 }
-func (w Compiler) parse(sql string) (string, error) {
+func (w Compiler) parse(sql string, args ...interface{}) (string, error) {
 	parseCtx := ParseContext{
 		SqlNodes:  []sqlparser.SQLNode{},
 		TableName: "",
 		Alias:     "",
 		Owner:     w,
+		args:      args,
 	}
 	sql = " " + sql
 	stm, err := sqlparser.Parse(sql)
@@ -876,7 +879,7 @@ func (w Compiler) walkOnSelect(stmt *sqlparser.Select, ctx *ParseContext) (strin
 
 }
 func (w Compiler) walkOnInsert(stmt *sqlparser.Insert, ctx *ParseContext) (string, error) {
-	ctx.SqlType = Insert
+	ctx.SqlType = InsertStmt
 	tableName, err := w.walkSQLNode(stmt.Table, ctx)
 	if err != nil {
 		return "", err
@@ -892,7 +895,7 @@ func (w Compiler) walkOnInsert(stmt *sqlparser.Insert, ctx *ParseContext) (strin
 	}
 
 	if fx, ok := stmt.Rows.(*sqlparser.Select); ok {
-		ctx.SqlType = Select
+		ctx.SqlType = SelectStmt
 		sqlSelect, err := w.walkOnSelect(fx, ctx)
 		if err != nil {
 			return "", err
@@ -918,7 +921,7 @@ func (w Compiler) walkOnInsert(stmt *sqlparser.Insert, ctx *ParseContext) (strin
 }
 
 func (w Compiler) walkOnUpdate(stmt *sqlparser.Update, ctx *ParseContext) (string, error) {
-	ctx.SqlType = Update
+	ctx.SqlType = UpdateStmt
 	tableName, err := w.walkSQLNode(stmt.TableExprs, ctx)
 	if err != nil {
 		return "", err
@@ -1188,7 +1191,8 @@ func (w Compiler) walkOnFuncExpr(expr *sqlparser.FuncExpr, ctx *ParseContext) (s
 		return "", fmt.Errorf("row_number require order by")
 
 	}
-	n, err := w.OnParse(Node{Nt: Function, V: funcName, C: args})
+
+	n, err := w.OnParse(Node{Nt: Function, V: funcName, C: args, IsResolved: false, ctx: ctx})
 	if err != nil {
 		return "", err
 	}
@@ -1445,7 +1449,7 @@ func (w Compiler) walkOnColIdent(expr sqlparser.ColIdent, ctx *ParseContext) (st
 			if err != nil {
 				return "", err
 			}
-			if ctx.SqlType == Insert {
+			if ctx.SqlType == InsertStmt {
 				if strings.Contains(n.V, ".") {
 
 					return strings.Split(n.V, ".")[1], nil

@@ -37,13 +37,15 @@ type EntityField struct {
 	AllowNull    bool
 	IsPrimaryKey bool
 
-	DefaultValue    string
-	MaxLen          int
-	ForeignKey      string
-	IndexName       string
-	UkName          string
-	NonPtrFieldType reflect.Type
-	HashKey         string
+	DefaultValue     string
+	MaxLen           int
+	ForeignKey       string
+	IndexName        string
+	UkName           string
+	NonPtrFieldType  reflect.Type
+	HashKey          string
+	IsFullTextSearch bool
+	IsBSON           bool
 }
 
 func newEntityType(t reflect.Type) (*EntityType, error) {
@@ -131,6 +133,11 @@ func (f *EntityField) initPropertiesByTags() error {
 	strTags := ";" + f.Tag.Get("db") + ";"
 	f.MaxLen = -1
 	ft := f.Type
+	if f.Type == reflect.TypeOf(FullTextSearchColumn("")) {
+
+		f.IsFullTextSearch = true
+		return nil
+	}
 	if f.Type.Kind() == reflect.Ptr {
 		ft = f.Type.Elem()
 	}
@@ -466,12 +473,17 @@ func getAllFields(typ reflect.Type) ([]reflect.StructField, []reflect.StructFiel
 	refField := []reflect.StructField{}
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
+		if field.Type == reflect.TypeOf(FullTextSearchColumn("")) { //loi  FullTextSearchColumn (type) is not an expressioncompiler
+			ret = append(ret, field)
+			continue
+		}
 		if field.Anonymous {
 			anonymousFields = append(anonymousFields, field)
 
 			continue
 		} else {
 			ft := field.Type
+
 			if field.Type.Kind() == reflect.Ptr {
 				ft = field.Type.Elem()
 			}

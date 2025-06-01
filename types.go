@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
+type FullTextSearchColumn string
 type ISqlCommand interface {
 	String() string
 }

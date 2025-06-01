@@ -184,6 +184,10 @@ var mapGoTypeToMySqlType = map[reflect.Type]string{
 }
 
 func (e *executorMySql) makeAlterTableAddColumn(tableName string, field EntityField) SqlCommandAddColumn {
+	if field.Type == reflect.TypeOf(FullTextSearchColumn("")) {
+		panic("FullTextSearchColumn is not supported in types_mysql.go at makeAlterTableAddColumn")
+
+	}
 	/**
 	ALTER TABLE public."AAA"
 	ADD COLUMN "C" bigint;

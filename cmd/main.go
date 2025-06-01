@@ -138,11 +138,30 @@ func insertData(TenantDb *dbx.DBXTenant) {
 	}
 	fmt.Println("Average time in ms ", avg/int64(100000))
 }
+func selectData(TenantDb *dbx.DBXTenant) {
+	avg := int64(0)
+	type SelectEmp struct {
+		Id   int
+		Code string
+	}
+	for i := 0; i < 10000; i++ {
+		start := time.Now()
+		emp, err := dbx.Select[SelectEmp](TenantDb, "select employeeId Id, code from Employees limit 10,10")
+		n := time.Since(start).Milliseconds()
+		avg += n
+		fmt.Println("Elapse time in ms ", n)
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println(len(emp))
+	}
+}
+
 func loadData(TenantDb *dbx.DBXTenant) {
 	avg := int64(0)
 	for i := 0; i < 10000; i++ {
 		start := time.Now()
-		usr, err := dbx.Find[Employees]("len(code)>=?", 2)(TenantDb)
+		usr, err := dbx.Query[Employees](TenantDb, "len(code)>=?", 2)
 		n := time.Since(start).Milliseconds()
 		avg += n
 		fmt.Println("Elapse time in ms ", n)
@@ -171,7 +190,8 @@ func main() {
 
 	TenantDb.Open()
 	defer TenantDb.Close()
-	insertData(TenantDb)
+	//insertData(TenantDb)
+	selectData(TenantDb)
 	//loadData(TenantDb)
 
 }

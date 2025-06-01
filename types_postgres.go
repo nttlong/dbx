@@ -83,6 +83,29 @@ func (e *executorPostgres) makeSQlCreateTable(fields []*EntityField, tableName s
 
 }
 func (e *executorPostgres) makeAlterTableAddColumn(tableName string, field EntityField) SqlCommandAddColumn {
+	if field.Type == reflect.TypeOf(FullTextSearchColumn("")) {
+		/**
+		ALTER TABLE documents
+		ADD COLUMN search_vector TEXT,
+					ADD COLUMN search_vector TSVECTOR GENERATED ALWAYS AS (
+		     to_tsvector('simple', COALESCE("SearchText", ''::citext)::text || ' ' || COALESCE(dbx_remove_diacritics("SearchText"), ''))
+		) STORED;
+		 sql3; CREATE INDEX "SearchText_vector_idx" ON public."FullTestSearchTest" USING GIN("SearchText_vector");
+		*/
+
+		sqlAddColumnStr := "ALTER TABLE \"" + tableName + "\" ADD COLUMN \"" + field.Name + "\" citext"
+		sqlVectorSearchstr := "ALTER TABLE \"" + tableName + "\" ADD COLUMN \"" + field.Name + "_vector\" TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple', COALESCE(\"" + field.Name + "\", ''::citext)::text || ' ' || COALESCE(dbx_remove_diacritics(\"" + field.Name + "\"), ''))) STORED"
+		sqlCreaeIndex := "CREATE INDEX \"" + tableName + "_" + field.Name + "_vector_idx\" ON \"" + tableName + "\" USING GIN(\"" + field.Name + "_vector\")"
+		ret := SqlCommandAddColumn{
+			string:    sqlAddColumnStr + ";" + sqlVectorSearchstr + ";" + sqlCreaeIndex,
+			TableName: tableName,
+			ColName:   field.Name,
+		}
+
+		//fmt.Println(ret.String())
+		return ret
+
+	}
 	/**
 	ALTER TABLE public."AAA"
 	ADD COLUMN "C" bigint;
@@ -261,6 +284,28 @@ func (e *executorPostgres) createDb(dbName string) func(dbMaster DBX, dbTenant D
 		sqlCheckDb := "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)"
 		sqlCreateTable := "CREATE DATABASE  \"" + dbName + "\""
 		sqlEnableCitext := "CREATE EXTENSION IF NOT EXISTS citext"
+		sqlEnabale_unaccent := "CREATE EXTENSION IF NOT EXISTS unaccent"
+		sqlConfig := `DO $$
+					BEGIN
+						IF NOT EXISTS (
+							SELECT 1
+							FROM pg_catalog.pg_ts_config
+							WHERE cfgname = 'dbx_simple_unaccent'
+						) THEN
+							CREATE TEXT SEARCH CONFIGURATION dbx_simple_unaccent (COPY = simple);
+						END IF;
+					END$$;
+				ALTER TEXT SEARCH CONFIGURATION dbx_simple_unaccent
+					ALTER MAPPING FOR hword, hword_part, word
+					WITH unaccent, simple;`
+
+		sqlDbxRemoveDiacriticsFunc := `CREATE OR REPLACE FUNCTION dbx_remove_diacritics(citext) RETURNS text AS $$
+									SELECT translate(
+										$1,
+										'áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđ',
+										'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd'
+									);
+									$$ LANGUAGE SQL IMMUTABLE;`
 		var exists bool
 		err := dbMaster.DB.QueryRow(sqlCheckDb, dbName).Scan(&exists)
 
@@ -287,7 +332,18 @@ func (e *executorPostgres) createDb(dbName string) func(dbMaster DBX, dbTenant D
 		if err != nil {
 			return err
 		}
-
+		_, err = dbTenant.DB.Exec(sqlDbxRemoveDiacriticsFunc)
+		if err != nil {
+			return err
+		}
+		_, err = dbTenant.DB.Exec(sqlEnabale_unaccent)
+		if err != nil {
+			return err
+		}
+		_, err = dbTenant.DB.Exec(sqlConfig)
+		if err != nil {
+			return err
+		}
 		return nil
 	}
 
