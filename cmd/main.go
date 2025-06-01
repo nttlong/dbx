@@ -104,7 +104,7 @@ func insertData(TenantDb *dbx.DBXTenant) {
 	for i := 0; i < 100000; i++ {
 		emp := Employees{
 
-			Code:        fmt.Sprintf("EMP-2A-%.8d", i),
+			Code:        fmt.Sprintf("EMP-4A-%.8d", i),
 			BasicSalary: 1000000,
 			BaseInfo: BaseInfo{
 				CreatedOn:   time.Now(),
@@ -157,7 +157,7 @@ func loadData(TenantDb *dbx.DBXTenant) {
 }
 func main() {
 	dbx.AddEntities(&Employees{}, &Departments{}, &Users{}, &WorkingDays{})
-	db := dbx.NewDBX(getMssqlConfig())
+	db := dbx.NewDBX(getPgConfig())
 	err := db.Open()
 	if err != nil {
 		panic(err)
@@ -171,7 +171,7 @@ func main() {
 
 	TenantDb.Open()
 	defer TenantDb.Close()
-	// insertData(TenantDb)
-	loadData(TenantDb)
+	insertData(TenantDb)
+	//loadData(TenantDb)
 
 }

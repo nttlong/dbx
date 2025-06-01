@@ -212,9 +212,10 @@ func TestInsertUser(t *testing.T) {
 	if err != nil {
 		println(err)
 	}
+	TenantDb.Exec("delete from users where username = 'admin123456'")
 	user := Users{
 		Id:           uuid.New().String(),
-		Username:     "admin",
+		Username:     "admin123456",
 		HashPassword: "123456",
 	}
 	err = TenantDb.Insert(&user)
