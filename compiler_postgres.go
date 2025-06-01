@@ -162,6 +162,54 @@ func postgresParseFunction(w Compiler, node Node) (Node, error) {
 		return node, nil
 
 	}
+	if functionName == "highlight" {
+		/**
+		ts_headline('dbx_simple_unaccent',"SearchText",to_tsquery('dbx_simple_unaccent', 'cà & thơm'),'StartSel=---,StopSel=***')
+		*/
+		if len(node.C) != 3 {
+			return node, fmt.Errorf("highlight function need 4 params. Ex: highlight('<b>,</b>','SearchText, ?)")
+		}
+		searchText := node.C[2].V //final param
+		strTemplate := "ts_headline('dbx_simple_unaccent',@field,to_tsquery('dbx_simple_unaccent', @param),'StartSel=@startTag,StopSel=@endTag')"
+		if node.C[2].V[0] == '$' {
+
+			strIndexOfParams := node.C[2].V[1:]
+			indexOfParams, err := strconv.Atoi(strIndexOfParams)
+			if err != nil {
+				return node, err
+			}
+			searchArg := node.ctx.args[indexOfParams-1]
+			if strSearch, ok := searchArg.(string); ok {
+
+				strSearch = strings.Replace(strSearch, " ", " & ", -1)
+				node.ctx.args[indexOfParams-1] = strSearch
+				strTemplate = strings.Replace(strTemplate, "@param", node.C[2].V, -1)
+
+			} else {
+
+				return node, fmt.Errorf("search text must be string")
+			}
+
+		} else {
+			searchText = strings.Replace(searchText, " ", " & ", -1)
+			strTemplate = strings.Replace(strTemplate, "@param", searchText, -1)
+		}
+
+		if !strings.Contains(node.C[0].V, ",") {
+			return node, fmt.Errorf("highlight function need 4 params. Ex: highlight('<b>,</b>','SearchText, ?)")
+		}
+		node.C[0].V = strings.Replace(node.C[0].V, "'", "", -1)
+		startTag := strings.Split(node.C[0].V, ",")[0]
+		endTag := strings.Split(node.C[0].V, ",")[1]
+		strTemplate = strings.Replace(strTemplate, "@startTag", startTag, -1)
+		strTemplate = strings.Replace(strTemplate, "@endTag", endTag, -1)
+		strTemplate = strings.Replace(strTemplate, "@field", node.C[1].V, -1)
+
+		node.V = strTemplate
+		node.IsResolved = true
+		return node, nil
+
+	}
 	return node, nil
 
 }

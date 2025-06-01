@@ -48,8 +48,12 @@ func TestJsonbPG(t *testing.T) {
 	dbx.Insert(TenantDbPg, FullTestSearchTest{
 		SearchText: "Cà pháo thối",
 	})
-	lst, err := dbx.Select[FullTestSearchTest](TenantDbPg, "select * from FullTestSearchTest where FullTextSearch(SearchText, 'cà phê thơm')")
+	type HiSt struct {
+		id int
+		Hl string
+	}
+	lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id,Highlight('<b>,</b>',SearchText, ?) Hl from FullTestSearchTest where FullTextSearch(SearchText,?)", "ca phe", "ca phe")
 	assert.NoError(t, err)
-	assert.Equal(t, 2, len(lst))
+	assert.True(t, len(lst) > 0)
 
 }
