@@ -39,8 +39,9 @@ type SqlCommandCreateUnique struct {
 type SqlCommandAddColumn struct {
 	// SqlCommand
 	string
-	TableName string
-	ColName   string
+	TableName             string
+	ColName               string
+	IsFullTextSeachColumn bool
 }
 type SqlCommandForeignKey struct {
 	// SqlCommand
@@ -81,6 +82,8 @@ type IExecutor interface {
 	makeSqlCommandForeignKey([]*ForeignKeyInfo) []*SqlCommandForeignKey
 	createDb(dbName string) func(dbMaster DBX, dbTenant DBXTenant) error
 	quote(str ...string) string
+	setPkIndex(tableName string, pkName string)
+	getPkIndex(tableName string) string
 }
 
 func (s *SqlCommandList) GetSqlCommandCreateTable() *SqlCommandCreateTable {

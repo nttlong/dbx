@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/nttlong/dbx"
@@ -17,6 +18,26 @@ func getPgConfig() dbx.Cfg {
 		SSL:      false,
 	}
 }
+func getMysqlConfig() dbx.Cfg {
+	return dbx.Cfg{
+		Driver:   "mysql",
+		Host:     "localhost",
+		Port:     3306,
+		User:     "root",
+		Password: "123456",
+		SSL:      false,
+	}
+}
+func getMssqlConfig() dbx.Cfg {
+	return dbx.Cfg{
+		Driver: "mssql",
+		Host:   "localhost",
+		// Port:     1433,
+		User:     "sa",
+		Password: "123456",
+		SSL:      false,
+	}
+}
 
 var TenantDbPg *dbx.DBXTenant
 
@@ -28,15 +49,59 @@ type FullTestSearchTest struct {
 
 func TestCreateTenantDbWithFullTextSearchColumnInEntity(t *testing.T) {
 	dbx.AddEntities(FullTestSearchTest{})
-	db := dbx.NewDBX(getPgConfig())
+	db := dbx.NewDBX(getMssqlConfig())
 	err := db.Open()
 	if err != nil {
 		panic(err)
 	}
 	defer db.Close()
+	err = db.Ping()
+	if err != nil {
+		panic(err)
+	}
 	TenantDbPg, err = db.GetTenant("dbTest")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, TenantDbPg)
+}
+
+type TestColumns struct {
+	ID int `db:"pk;df:auto"`
+}
+
+func (c *TestColumns) FullTextSearchColumn() []string {
+	return []string{"SearchText"}
+}
+func DetectFuncFullTextSearchColumn(i interface{}) []string {
+	val := reflect.ValueOf(i)
+	method := val.MethodByName("FullTextSearchColumn")
+
+	if !method.IsValid() {
+		return []string{}
+	}
+
+	// Đảm bảo method không cần đối số
+	if method.Type().NumIn() != 0 {
+		return []string{}
+	}
+
+	// Gọi hàm
+	results := method.Call(nil)
+	if len(results) != 1 {
+		return []string{}
+	}
+
+	// Kiểm tra kiểu trả về là []string
+	if s, ok := results[0].Interface().([]string); ok {
+		return s
+	}
+
+	return nil
+}
+func TestDetect(t *testing.T) {
+	cols := DetectFuncFullTextSearchColumn(&TestColumns{})
+	assert.Equal(t, []string{"SearchText"}, cols)
+	cols = DetectFuncFullTextSearchColumn(&FullTestSearchTest{})
+	assert.Equal(t, []string{}, cols)
 }
 func TestJsonbPG(t *testing.T) {
 	TestCreateTenantDbWithFullTextSearchColumnInEntity(t)
@@ -49,10 +114,11 @@ func TestJsonbPG(t *testing.T) {
 		SearchText: "Cà pháo thối",
 	})
 	type HiSt struct {
-		id int
-		Hl string
+		id    int
+		Hl    string
+		Score float64
 	}
-	lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id,Highlight('<b>,</b>',SearchText, ?) Hl from FullTestSearchTest where FullTextSearch(SearchText,?)", "ca phe", "ca phe")
+	lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id, search_score(SearchText, 'ca phe thom') Score,search_highlight('<b>,</b>',SearchText, 'ca phe thom') Hl from FullTestSearchTest where search_filter(SearchText,'ca phe thom') order by Score desc limit 10")
 	assert.NoError(t, err)
 	assert.True(t, len(lst) > 0)
 

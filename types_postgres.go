@@ -47,7 +47,19 @@ var mapDefaultValueFuncToPg = map[string]string{
 	"uuid()": "uuid_generate_v4()",
 	"auto":   "SERIAL",
 }
+var pgPkIndexCache = sync.Map{}
 
+func (e *executorPostgres) setPkIndex(tableName string, pkName string) {
+	pgPkIndexCache.Store(tableName, pkName)
+
+}
+func (e *executorPostgres) getPkIndex(tableName string) string {
+	if pkName, ok := pgPkIndexCache.Load(tableName); ok {
+		return pkName.(string)
+	}
+	return ""
+
+}
 func (e *executorPostgres) quote(str ...string) string {
 	return "\"" + strings.Join(str, "\",\"") + "\""
 
@@ -103,6 +115,7 @@ func (e *executorPostgres) makeAlterTableAddColumn(tableName string, field Entit
 		}
 
 		//fmt.Println(ret.String())
+		ret.IsFullTextSeachColumn = true
 		return ret
 
 	}

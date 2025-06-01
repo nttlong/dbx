@@ -127,7 +127,7 @@ func postgresParseFunction(w Compiler, node Node) (Node, error) {
 		v := fmt.Sprintf("EXTRACT(%s FROM %s)", upperFunctionName, node.C[0].V)
 		return Node{Nt: Function, V: v, IsResolved: true}, nil
 	}
-	if functionName == "fulltextsearch" {
+	if functionName == "search_filter" {
 		fieldSearch := node.C[0].V
 		searchText := node.C[1].V
 		//"SearchText_vector" @@ to_tsquery('dbx_simple_unaccent', 'cà & thơm');
@@ -162,7 +162,7 @@ func postgresParseFunction(w Compiler, node Node) (Node, error) {
 		return node, nil
 
 	}
-	if functionName == "highlight" {
+	if functionName == "search_highlight" {
 		/**
 		ts_headline('dbx_simple_unaccent',"SearchText",to_tsquery('dbx_simple_unaccent', 'cà & thơm'),'StartSel=---,StopSel=***')
 		*/
@@ -208,6 +208,40 @@ func postgresParseFunction(w Compiler, node Node) (Node, error) {
 		node.V = strTemplate
 		node.IsResolved = true
 		return node, nil
+
+	}
+	if functionName == "search_score" {
+		if len(node.C) != 2 {
+			return node, fmt.Errorf("search_score function need 2 params. Ex: search_score('SearchText, ?')")
+		}
+		searchText := node.C[1].V //final param
+		if node.C[1].V[0] == '$' {
+
+			strIndexOfParams := node.C[1].V[1:]
+			indexOfParams, err := strconv.Atoi(strIndexOfParams)
+			if err != nil {
+				return node, err
+			}
+			searchArg := node.ctx.args[indexOfParams-1]
+			if strSearch, ok := searchArg.(string); ok {
+
+				strSearch = strings.Replace(strSearch, " ", " & ", -1)
+				node.ctx.args[indexOfParams-1] = strSearch
+
+			} else {
+
+				return node, fmt.Errorf("search text must be string")
+			}
+		} else {
+			searchText = strings.Replace(searchText, " ", " & ", -1)
+		}
+		fieldVector := w.Quote.UnQuote(strings.Split(node.C[0].V, ".")...) + "_vector"
+		fieldVector = w.Quote.Quote(strings.Split(fieldVector, ".")...)
+		strRank := "ts_rank(" + fieldVector + ", to_tsquery('dbx_simple_unaccent', " + searchText + "))"
+		node.V = strRank
+		node.IsResolved = true
+		return node, nil
+		// ts_rank("SearchText_vector", to_tsquery('simple', 'cà & phê')) AS score
 
 	}
 	return node, nil

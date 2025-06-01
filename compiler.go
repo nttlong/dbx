@@ -1278,7 +1278,7 @@ func (w Compiler) walkOnColName(expr *sqlparser.ColName, ctx *ParseContext) (str
 					// fmt.Println(len(ctx.SqlNodes))
 
 					tableName = w.Quote.UnQuote(tableName)
-					n, err := w.OnParse(Node{Nt: Field, V: tableName + "." + expr.Name.String()})
+					n, err := w.OnParse(Node{Nt: Field, V: expr.Name.String()})
 					if err != nil {
 						return "", err
 					}

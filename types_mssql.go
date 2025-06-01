@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -18,6 +19,18 @@ type executorMssql struct {
 
 func newExecutorMssql() IExecutor {
 	return executorMssql{}
+}
+
+var cachePkIndex = sync.Map{}
+
+func (e executorMssql) setPkIndex(tableName string, pkName string) {
+	cachePkIndex.Store(tableName, pkName)
+}
+func (e executorMssql) getPkIndex(tableName string) string {
+	if pkName, ok := cachePkIndex.Load(tableName); ok {
+		return pkName.(string)
+	}
+	return ""
 }
 func (e executorMssql) createTable(dbName string, entity interface{}) func(db *sql.DB) error {
 	var entityType *EntityType = nil
@@ -162,8 +175,10 @@ func (e executorMssql) makeSQlCreateTable(primaryKey []*EntityField, tableName s
 
 	keyColsNames := make([]string, 0)
 	//primaryStr := make([]string, 0)
-
+	pkCols := make([]string, 0)
 	for _, field := range primaryKey {
+		pkCols = append(pkCols, field.Name)
+
 		fieldType := mapGoTypeToMySqlType[field.Type]
 		if field.DefaultValue == "auto" {
 			fieldType = "INT IDENTITY(1,1) "
@@ -178,7 +193,7 @@ func (e executorMssql) makeSQlCreateTable(primaryKey []*EntityField, tableName s
 	}
 	execSQl := strings.Replace(sqlCmdCreateTableStr, "@dbName", tableName, -1)
 	execSQl = strings.Replace(execSQl, "@ColsNames", strings.Join(keyColsNames, ","), -1)
-
+	e.setPkIndex(tableName, strings.Join(pkCols, ","))
 	return SqlCommandCreateTable{
 		string:    execSQl,
 		TableName: tableName,
@@ -210,9 +225,74 @@ var mapDefaultValueFuncMssqlMysql = map[string]string{
 	"auto":   "IDENTITY(1,1)",
 }
 
+func createMssqlFullTextSearch(e executorMssql, tableName string, field EntityField) SqlCommandAddColumn {
+	//CREATE FULLTEXT CATALOG ftCatalog AS DEFAULT;
+	keysCols := e.getPkIndex(tableName)
+	name := tableName + "_" + field.Name + "_" + strings.ReplaceAll(keysCols, ",", "_")
+	sqlCmdAlterTableAddCol := `IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS  WHERE TABLE_NAME = '%s' AND COLUMN_NAME = '%s')
+								BEGIN
+									ALTER TABLE [%s] 
+									ADD [%s] NVARCHAR(MAX) COLLATE Latin1_General_CI_AI
+								END`
+	sqlCmdAlterTableAddCol = fmt.Sprintf(sqlCmdAlterTableAddCol, tableName, field.Name, tableName, field.Name)
+	fullTextSearchCatalogName := name + "_ftCatalog"
+	sqlFullTextSearchCatalog := `IF NOT EXISTS (SELECT * FROM sys.fulltext_catalogs WHERE name = '%s')
+									BEGIN
+										CREATE FULLTEXT CATALOG [%s] AS DEFAULT;
+									END`
+	sqlFullTextSearchCatalog = fmt.Sprintf(sqlFullTextSearchCatalog, fullTextSearchCatalogName, fullTextSearchCatalogName)
+
+	//CREATE UNIQUE INDEX UI_Products_ProductID ON Products(ProductID);
+	ui_name := "UI_" + name
+
+	sqlCreateUniqueIndex := `IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = '%s' AND object_id = OBJECT_ID('%s'))
+								BEGIN
+									CREATE UNIQUE INDEX [%s] 
+									ON [%s]([%s]);
+								END`
+	sqlCreateUniqueIndex = fmt.Sprintf(sqlCreateUniqueIndex, ui_name, tableName, ui_name, tableName, strings.ReplaceAll(keysCols, ",", "_"))
+
+	//CREATE FULLTEXT CATALOG ftCatalog AS DEFAULT;
+
+	sqlCreateFullTextCatalog := `IF NOT EXISTS (SELECT * FROM sys.fulltext_catalogs WHERE name = '%s')
+								BEGIN
+									CREATE FULLTEXT CATALOG [%s] AS DEFAULT;
+								END`
+	sqlCreateFullTextCatalog = fmt.Sprintf(sqlCreateFullTextCatalog, fullTextSearchCatalogName, fullTextSearchCatalogName)
+	//CREATE FULLTEXT INDEX ON Products(Name, Description)    KEY INDEX UI_Products_ProductID     ON ftCatalog;
+	sqlCreateFullTextIndex := `IF NOT EXISTS (SELECT * FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID('%s'))
+								BEGIN
+									CREATE FULLTEXT INDEX ON [%s]([%s])
+									KEY INDEX [%s]
+									ON [%s];
+								END`
+	sqlCreateFullTextIndex = fmt.Sprintf(sqlCreateFullTextIndex, tableName, tableName, field.Name, ui_name, fullTextSearchCatalogName)
+	fmt.Println(sqlCmdAlterTableAddCol)
+	fmt.Println(sqlFullTextSearchCatalog)
+	fmt.Println(sqlCreateUniqueIndex)
+	fmt.Println(sqlCreateFullTextIndex)
+	fmt.Println(sqlCreateFullTextCatalog)
+	fmt.Println(sqlCreateFullTextIndex)
+
+	allSql := []string{
+		sqlCmdAlterTableAddCol,
+		sqlFullTextSearchCatalog,
+		sqlCreateUniqueIndex,
+		sqlCreateFullTextIndex,
+		sqlCreateFullTextCatalog,
+		sqlCreateFullTextIndex,
+	}
+
+	return SqlCommandAddColumn{
+		string:    strings.Join(allSql, "\n"),
+		TableName: tableName,
+		ColName:   field.Name,
+	}
+
+}
 func (e executorMssql) makeAlterTableAddColumn(tableName string, field EntityField) SqlCommandAddColumn {
 	if field.Type == reflect.TypeOf(FullTextSearchColumn("")) {
-		panic("FullTextSearchColumn is not supported in types_mssql.go at makeAlterTableAddColumn")
+		return createMssqlFullTextSearch(e, tableName, field)
 
 	}
 

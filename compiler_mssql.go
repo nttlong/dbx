@@ -184,6 +184,9 @@ func (w CompilerMssql) Parse(sql string, args ...interface{}) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if !strings.Contains(sql, " --select-- ") {
+		return sql, nil
+	}
 	selectStr := strings.Split(sql, " --select-- ")[0]
 	fromClause := strings.Split(sql, " --select-- ")[1]
 	realFromClause := fromClause

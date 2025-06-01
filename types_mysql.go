@@ -25,6 +25,20 @@ func (e *executorMySql) quote(str ...string) string {
 	return "`" + strings.Join(str, "`,`") + "`"
 
 }
+
+var mysqlPkIndexCache = sync.Map{}
+
+func (e *executorMySql) setPkIndex(tableName string, pkName string) {
+	mysqlPkIndexCache.Store(tableName, pkName)
+
+}
+func (e *executorMySql) getPkIndex(tableName string) string {
+	if pkName, ok := mysqlPkIndexCache.Load(tableName); ok {
+		return pkName.(string)
+	}
+	return ""
+
+}
 func (e *executorMySql) createTable(dbname string, entity interface{}) func(db *sql.DB) error {
 	var entityType *EntityType = nil
 	if _entityType, ok := entity.(*EntityType); ok {
