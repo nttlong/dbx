@@ -527,7 +527,7 @@ func (w Compiler) walkSQLNode(node sqlparser.SQLNode, ctx *ParseContext) (string
 				return "", err
 			}
 
-			return "%LIMIT%(" + rc + ")", nil
+			return "<limit>" + rc + "</limit>", nil
 		}
 
 		if fx.Offset != nil && fx.Rowcount == nil {
@@ -536,7 +536,7 @@ func (w Compiler) walkSQLNode(node sqlparser.SQLNode, ctx *ParseContext) (string
 				return "", err
 			}
 
-			return "%OFFSET%(" + off + ")", nil
+			return "<offset>" + off + "</offset>", nil
 		}
 		if fx.Offset != nil && fx.Rowcount != nil {
 			ofs, err := w.walkSQLNode(fx.Offset, ctx)
@@ -552,7 +552,7 @@ func (w Compiler) walkSQLNode(node sqlparser.SQLNode, ctx *ParseContext) (string
 				return "", err
 			}
 
-			return "%OFFSET%(" + n.Offset + ")%LIMIT%(" + n.Limit + ")", nil
+			return "<offset>" + n.Offset + "</offset> <limit>" + n.Limit + "</limit>", nil
 		}
 
 	}
@@ -818,7 +818,7 @@ func (w Compiler) walkOnSelect(stmt *sqlparser.Select, ctx *ParseContext) (strin
 		if err != nil {
 			return "", err
 		}
-		strFrom = "FROM " + from
+		strFrom = from
 
 	}
 	// grNodes := ctx.groupWithAs()
@@ -833,15 +833,15 @@ func (w Compiler) walkOnSelect(stmt *sqlparser.Select, ctx *ParseContext) (strin
 		selectFields = append(selectFields, s)
 
 	}
-	strSelect = "SELECT --select-- " + strings.Join(selectFields, ", ")
-	ret = append(ret, strSelect, strFrom)
+	strSelect = "<select>" + strings.Join(selectFields, ", ") + "</select>"
+	ret = append(ret, strSelect, "<from>"+strFrom+"</from>")
 
 	if stmt.GroupBy != nil {
 		groupBy, err := w.walkSQLNode(stmt.GroupBy, ctx)
 		if err != nil {
 			return "", err
 		}
-		ret = append(ret, "GROUP BY "+groupBy)
+		ret = append(ret, "<group>"+groupBy+"</group>")
 
 	}
 	if stmt.Having != nil {
@@ -849,14 +849,14 @@ func (w Compiler) walkOnSelect(stmt *sqlparser.Select, ctx *ParseContext) (strin
 		if err != nil {
 			return "", err
 		}
-		ret = append(ret, "HAVING "+groupBy)
+		ret = append(ret, "<having>"+groupBy+"</having>")
 	}
 	if stmt.Where != nil {
 		where, err := w.walkSQLNode(stmt.Where, ctx)
 		if err != nil {
 			return "", err
 		}
-		ret = append(ret, "WHERE "+where)
+		ret = append(ret, "<where>"+where+"</where>")
 	}
 
 	if stmt.OrderBy != nil {
@@ -864,7 +864,7 @@ func (w Compiler) walkOnSelect(stmt *sqlparser.Select, ctx *ParseContext) (strin
 		if err != nil {
 			return "", err
 		}
-		ret = append(ret, "ORDER BY "+orderBy)
+		ret = append(ret, "<order>"+orderBy+"</order>")
 	}
 
 	if stmt.Limit != nil {

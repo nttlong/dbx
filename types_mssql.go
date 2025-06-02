@@ -225,6 +225,50 @@ var mapDefaultValueFuncMssqlMysql = map[string]string{
 	"auto":   "IDENTITY(1,1)",
 }
 
+func createMssqlHighlightFunction() string {
+	ret := `CREATE OR ALTER FUNCTION [dbo].[dbx_HighlightText]
+		(
+			@StartTag NVARCHAR(50),
+			@EndTag NVARCHAR(50),
+			@InputText NVARCHAR(MAX),
+			@Keywords NVARCHAR(MAX)
+		)
+		RETURNS NVARCHAR(MAX)
+		AS
+		BEGIN
+			DECLARE @Result NVARCHAR(MAX)
+			SET @Result = @InputText
+
+			DECLARE @Keyword NVARCHAR(100)
+			DECLARE @Pos INT = 0
+
+			-- Thêm dấu cách vào đầu và cuối để đơn giản hóa tìm kiếm
+			SET @Keywords = LTRIM(RTRIM(@Keywords)) + ' '
+
+			WHILE CHARINDEX(' ', @Keywords, @Pos + 1) > 0
+			BEGIN
+				DECLARE @NextSpace INT = CHARINDEX(' ', @Keywords, @Pos + 1)
+				SET @Keyword = LTRIM(RTRIM(SUBSTRING(@Keywords, @Pos + 1, @NextSpace - @Pos - 1)))
+
+				-- Chỉ thay thế nếu keyword tồn tại và không trống
+				IF LEN(@Keyword) > 0
+				BEGIN
+					-- Thay thế từ khóa (không phân biệt hoa thường)
+					SET @Result = REPLACE(
+						@Result,
+						@Keyword,
+						@StartTag + @Keyword + @EndTag
+					)
+				END
+
+				SET @Pos = @NextSpace
+			END
+
+			RETURN @Result
+		END
+		`
+	return ret
+}
 func createMssqlFullTextSearch(e executorMssql, tableName string, field EntityField) SqlCommandAddColumn {
 	//CREATE FULLTEXT CATALOG ftCatalog AS DEFAULT;
 	keysCols := e.getPkIndex(tableName)
@@ -232,7 +276,7 @@ func createMssqlFullTextSearch(e executorMssql, tableName string, field EntityFi
 	sqlCmdAlterTableAddCol := `IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS  WHERE TABLE_NAME = '%s' AND COLUMN_NAME = '%s')
 								BEGIN
 									ALTER TABLE [%s] 
-									ADD [%s] NVARCHAR(MAX) COLLATE Latin1_General_CI_AI
+									ADD [%s] NVARCHAR(MAX) COLLATE Vietnamese_CI_AI
 								END`
 	sqlCmdAlterTableAddCol = fmt.Sprintf(sqlCmdAlterTableAddCol, tableName, field.Name, tableName, field.Name)
 	fullTextSearchCatalogName := name + "_ftCatalog"
@@ -262,7 +306,7 @@ func createMssqlFullTextSearch(e executorMssql, tableName string, field EntityFi
 	//CREATE FULLTEXT INDEX ON Products(Name, Description)    KEY INDEX UI_Products_ProductID     ON ftCatalog;
 	sqlCreateFullTextIndex := `IF NOT EXISTS (SELECT * FROM sys.fulltext_indexes WHERE object_id = OBJECT_ID('%s'))
 								BEGIN
-									CREATE FULLTEXT INDEX ON [%s]([%s])
+									CREATE FULLTEXT INDEX ON [%s]([%s]  LANGUAGE 'Neutral')
 									KEY INDEX [%s]
 									ON [%s];
 								END`
@@ -284,7 +328,7 @@ func createMssqlFullTextSearch(e executorMssql, tableName string, field EntityFi
 	}
 
 	return SqlCommandAddColumn{
-		string:    strings.Join(allSql, "\n"),
+		string:    strings.Join(allSql, ";\n"),
 		TableName: tableName,
 		ColName:   field.Name,
 	}
@@ -447,6 +491,17 @@ func (e executorMssql) createDb(dbName string) func(dbMaster DBX, dbTenant DBXTe
 	sqlCreateDb := fmt.Sprintf(sqlCreateDbOnMSSQL, dbName, e.quote(dbName))
 	return func(dbMaster DBX, dbTenant DBXTenant) error {
 		_, err := dbMaster.Exec(sqlCreateDb)
+
+		if err != nil {
+			return err
+		}
+		dbTenant.Open()
+		defer dbTenant.Close()
+		r, err := dbTenant.DB.Exec(createMssqlHighlightFunction())
+		if err != nil {
+			return err
+		}
+		_, err = r.RowsAffected()
 		if err != nil {
 			return err
 		}

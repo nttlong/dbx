@@ -2,7 +2,7 @@ package dbx
 
 import (
 	"database/sql"
-	"strconv"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -44,22 +44,7 @@ func (w CompilerMssql) parseInsertSQL(p parseInsertInfo) (*string, error) {
 
 		sql := sql1 + " OUTPUT INSERTED." + p.keyColsNames[0] + " VALUES (" + sql2
 		return &sql, nil
-		// strOutPut := "SELECT ID = convert(bigint, SCOPE_IDENTITY())"
-		// sqls := []string{p.SqlInsert + "\n" + strOutPut}
-		// // sqlGetLastestId := "SELECT LAST_INSERT_ID() INTO @last_id"
-		// // sqls = append(sqls, sqlGetLastestId)
-		// /**
-		// 	SELECT product_id, product_name, price, stock_quantity, created_at, last_updated
-		// FROM products
-		// WHERE product_id = @last_id;
-		// */
-		// //sqlSelectautoValueCols := "SELECT " + w.Quote.Quote(p.keyColsNames[0]) + "," + w.Quote.Quote(p.DefaultValueCols...) + " from " + w.Quote.Quote(p.TableName) + " where " + w.Quote.Quote(p.keyColsNames[0]) + " = ?"
 
-		// sqls = append(sqls) //, sqlSelectautoValueCols)
-		// //OUTPUT INSERTED.EmployeeId;
-
-		// p.SqlInsert = strings.Join(sqls, "\n")
-		// return &p.SqlInsert, nil
 	}
 
 	return &p.SqlInsert, nil
@@ -175,57 +160,105 @@ func mssqlParseFunction(w Compiler, node Node) (Node, error) {
 		}
 		if fnName == "len" {
 			node.V = "LEN"
+
+		}
+		if fnName == "search_filter" {
+			return mssql_search_filter(w, node)
+		}
+		if fnName == "search_highlight" {
+			return mssql_search_highlight(w, node)
+		}
+		if fnName == "search_score" {
+			return mssql_search_score(w, node)
+		}
+		if fnName == "search_table" {
+			tableName := node.C[0].V
+			fields := []string{}
+			for i := 1; i < len(node.C); i++ {
+				fields = append(fields, node.C[i].V)
+			}
+
+			node.V = tableName + "!" + strings.Join(fields, ",")
+			node.IsResolved = true
+			return node, nil
+
 		}
 	}
+
 	return node, nil
 }
 func (w CompilerMssql) Parse(sql string, args ...interface{}) (string, error) {
+
 	sql, err := w.Compiler.Parse(sql, args)
+
 	if err != nil {
 		return "", err
 	}
-	if !strings.Contains(sql, " --select-- ") {
-		return sql, nil
+	mxlQr, err := createQueryDefinitionFromXml(sql)
+	if err != nil {
+		return "", err
 	}
-	selectStr := strings.Split(sql, " --select-- ")[0]
-	fromClause := strings.Split(sql, " --select-- ")[1]
-	realFromClause := fromClause
-	limit := -1
-	if strings.Contains(fromClause, "%LIMIT%(") {
-		realFromClause = strings.Split(realFromClause, "%LIMIT%(")[0]
-		limitClause := strings.Split(fromClause, "%LIMIT%(")[1]
-		limitClause = strings.Split(limitClause, ")")[0]
-		limit, err = strconv.Atoi(limitClause)
-		if err != nil {
-			return "", err
-		}
-	}
-	offset := -1
-	if strings.Contains(fromClause, "%OFFSET%(") {
-		realFromClause = strings.Split(realFromClause, "%OFFSET%(")[0]
-		offsetClause := strings.Split(fromClause, "%OFFSET%(")[1]
-		offsetClause = strings.Split(offsetClause, ")")[0]
-		offset, err = strconv.Atoi(offsetClause)
-		if err != nil {
-			return "", err
-		}
-	}
-	retSQL := selectStr + " " + realFromClause
-	if limit > -1 && offset == -1 {
-		retSQL = selectStr + " TOP(" + strconv.Itoa(limit) + ") " + realFromClause
-	} else if offset > -1 && limit == -1 {
-		/*
-					SELECT column1, column2
-			FROM table_name
-			ORDER BY column
-			OFFSET m ROWS FETCH NEXT n ROWS ONLY;
-		*/
-		retSQL = selectStr + " " + realFromClause + " OFFSET " + strconv.Itoa(offset) + " ROWS"
-	} else if offset > -1 && limit > -1 {
-		retSQL = selectStr + " " + realFromClause + " OFFSET " + strconv.Itoa(offset) + " ROWS FETCH NEXT " + strconv.Itoa(limit) + " ROWS ONLY"
-	}
-	return retSQL, nil
+	return mxlQr.toMssql(), nil
 
-	// sql looks like "SELECT --select-- * FROM [Employees] %LIMIT%(1)"
+}
+func mssql_search_filter(w Compiler, node Node) (Node, error) {
+	if len(node.C) != 2 {
+		return node, fmt.Errorf("search_filter function requires 2 parameter ex: search_filter('table.field', 'keyword')")
+	}
+	if !strings.Contains(node.C[0].V, ".") {
+		return node, fmt.Errorf("the first parameter of search_filter function is invalid, it should be a string with dot separated values, real value is %s", node.C[0].V)
+	}
+	//FREETEXT(SearchText, N'cà thối')
+	node.V = "FREETEXT(" + node.C[0].V + ", " + node.C[1].V + ")"
+	node.IsResolved = true
+	return node, nil
 
+}
+func mssql_search_highlight(w Compiler, node Node) (Node, error) {
+	if len(node.C) != 3 {
+		//search_highlight('<b>,</b>',SearchText, 'ca phe thom')
+		return node, fmt.Errorf("search_highlight function requires 3 parameters. ex: search_highlight('<b>,</b>',table.field, 'search_text')")
+	}
+
+	if !strings.Contains(node.C[0].V, ",") {
+		return node, fmt.Errorf("the first parameter of search_highlight function is invalid, it should be a string with comma separated values, real value is %s", node.C[0].V)
+	}
+	//[dbo].[dbx_HighlightText]('<b>','</b>',N'cà phê cực ngon',N'cà pháo dở')
+	node.C[0].V = strings.Replace(node.C[0].V, "'", "", -1)
+	startTag := strings.Split(node.C[0].V, ",")[0]
+	endTag := strings.Split(node.C[0].V, ",")[1]
+	node.V = fmt.Sprintf("[dbo].[dbx_HighlightText]('%s','%s',%s,%s)", startTag, endTag, node.C[1].V, node.C[2].V)
+	node.IsResolved = true
+	return node, nil
+
+}
+func mssql_search_score(w Compiler, node Node) (Node, error) {
+	/*
+		INNER JOIN FREETEXTTABLE( FullTestSearchTest, SearchText,N'cà phe') AS ft ON r.ID = ft.[KEY]
+	*/
+	//node.ctx.
+	//search_score(FullTestSearchTest.SearchText, ?)
+
+	if len(node.C) != 3 {
+		return node, fmt.Errorf("search_score function need 3 params. Ex: search_score(search_table(table,key1,..,keyn), fieldsearch, keyword or)")
+	}
+
+	tableName := strings.Split(node.C[0].V, "!")[0]
+	strKeys := strings.Split(node.C[0].V, "!")[1]
+	fieldName := node.C[1].V
+
+	freeTextTableNameAlias := w.Quote.UnQuote(tableName) + "_" + w.Quote.UnQuote(fieldName) + "_fts"
+	retStr := "INNER JOIN FREETEXTTABLE(@tableName, @fieldName,@argName) AS @aliasName ON @tableName.@keyName = @aliasName.[KEY]"
+	retStr = strings.Replace(retStr, "@tableName", tableName, -1)
+	retStr = strings.Replace(retStr, "@fieldName", fieldName, -1)
+	retStr = strings.Replace(retStr, "@keyName", strKeys, -1)
+	retStr = strings.Replace(retStr, "@aliasName", freeTextTableNameAlias, -1)
+	retStr = strings.Replace(retStr, "@argName", node.C[2].V, -1)
+
+	fmt.Println(freeTextTableNameAlias)
+
+	fmt.Println(retStr)
+	node.V = "<sql-server-fts>" + retStr + "<alias_tfs>" + freeTextTableNameAlias + "</alias_tfs>" + "</sql-server-fts>"
+	node.IsResolved = true
+	return node, nil
 }

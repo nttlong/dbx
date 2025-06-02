@@ -129,6 +129,7 @@ func postgresParseFunction(w Compiler, node Node) (Node, error) {
 	}
 	if functionName == "search_filter" {
 		fieldSearch := node.C[0].V
+
 		searchText := node.C[1].V
 		//"SearchText_vector" @@ to_tsquery('dbx_simple_unaccent', 'cà & thơm');
 		//"SearchText_vector" @@ to_tsquery('dbx_simple_unaccent', 'cà & thơm');
@@ -169,6 +170,7 @@ func postgresParseFunction(w Compiler, node Node) (Node, error) {
 		if len(node.C) != 3 {
 			return node, fmt.Errorf("highlight function need 4 params. Ex: highlight('<b>,</b>','SearchText, ?)")
 		}
+
 		searchText := node.C[2].V //final param
 		strTemplate := "ts_headline('dbx_simple_unaccent',@field,to_tsquery('dbx_simple_unaccent', @param),'StartSel=@startTag,StopSel=@endTag')"
 		if node.C[2].V[0] == '$' {
@@ -211,13 +213,14 @@ func postgresParseFunction(w Compiler, node Node) (Node, error) {
 
 	}
 	if functionName == "search_score" {
-		if len(node.C) != 2 {
-			return node, fmt.Errorf("search_score function need 2 params. Ex: search_score('SearchText, ?')")
+		if len(node.C) != 3 {
+			return node, fmt.Errorf("search_score function need 3 params. Ex: search_score(search_table(table,key1,..,keyn), fieldsearch, keyword or)")
 		}
-		searchText := node.C[1].V //final param
-		if node.C[1].V[0] == '$' {
 
-			strIndexOfParams := node.C[1].V[1:]
+		searchText := node.C[2].V //final param
+		if searchText[0] == '$' {
+
+			strIndexOfParams := searchText[1:]
 			indexOfParams, err := strconv.Atoi(strIndexOfParams)
 			if err != nil {
 				return node, err
@@ -235,13 +238,25 @@ func postgresParseFunction(w Compiler, node Node) (Node, error) {
 		} else {
 			searchText = strings.Replace(searchText, " ", " & ", -1)
 		}
-		fieldVector := w.Quote.UnQuote(strings.Split(node.C[0].V, ".")...) + "_vector"
+		fieldVector := w.Quote.UnQuote(strings.Split(node.C[1].V, ".")...) + "_vector"
 		fieldVector = w.Quote.Quote(strings.Split(fieldVector, ".")...)
 		strRank := "ts_rank(" + fieldVector + ", to_tsquery('dbx_simple_unaccent', " + searchText + "))"
 		node.V = strRank
 		node.IsResolved = true
 		return node, nil
 		// ts_rank("SearchText_vector", to_tsquery('simple', 'cà & phê')) AS score
+
+	}
+	if functionName == "search_table" {
+		tableName := node.C[0].V
+		fields := []string{}
+		for i := 1; i < len(node.C); i++ {
+			fields = append(fields, node.C[i].V)
+		}
+
+		node.V = tableName + "!" + strings.Join(fields, ",")
+		node.IsResolved = true
+		return node, nil
 
 	}
 	return node, nil
