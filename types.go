@@ -39,9 +39,9 @@ type SqlCommandCreateUnique struct {
 type SqlCommandAddColumn struct {
 	// SqlCommand
 	string
-	TableName             string
-	ColName               string
-	IsFullTextSeachColumn bool
+	TableName              string
+	ColName                string
+	IsFullTextSearchColumn bool
 }
 type SqlCommandForeignKey struct {
 	// SqlCommand

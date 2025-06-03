@@ -197,9 +197,35 @@ var mapGoTypeToMySqlType = map[reflect.Type]string{
 	reflect.TypeOf(uuid.UUID{}):       "VARCHAR(36)",
 }
 
+func mysqlMakeFTSColumn(e *executorMySql, tableName string, field EntityField) SqlCommandAddColumn {
+	sqlCmdAlterTableAddColumnStr := "ALTER TABLE " + e.quote(tableName) + " ADD COLUMN " + e.quote(field.Name) + " TEXT COLLATE utf8mb4_unicode_ci;"
+	sqlAlterTableAddFTSIndex := "ALTER TABLE " + e.quote(tableName) + " ADD FULLTEXT (" + e.quote(field.Name) + ");"
+	return SqlCommandAddColumn{
+		string:                 sqlCmdAlterTableAddColumnStr + sqlAlterTableAddFTSIndex,
+		TableName:              tableName,
+		ColName:                field.Name,
+		IsFullTextSearchColumn: true,
+	}
+}
+func mysqlAddColumnToTableIfNotExistsSqlCommand(e *executorMySql, TableName string, Field string, addColsCmd string) string {
+	ret := `IF NOT EXISTS (
+        SELECT 1
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() -- Lấy tên database hiện tại
+          AND TABLE_NAME = @tableName
+          AND COLUMN_NAME = @fieldName
+    ) THEN
+        @addColsCmd
+    END IF;`
+	ret = strings.ReplaceAll(ret, "@tableName", e.quote(TableName))
+	ret = strings.ReplaceAll(ret, "@fieldName", e.quote(Field))
+	ret = strings.ReplaceAll(ret, "@addColsCmd", addColsCmd)
+	return ret
+}
+
 func (e *executorMySql) makeAlterTableAddColumn(tableName string, field EntityField) SqlCommandAddColumn {
 	if field.Type == reflect.TypeOf(FullTextSearchColumn("")) {
-		panic("FullTextSearchColumn is not supported in types_mysql.go at makeAlterTableAddColumn")
+		return mysqlMakeFTSColumn(e, tableName, field)
 
 	}
 	/**
@@ -231,15 +257,15 @@ func (e *executorMySql) makeAlterTableAddColumn(tableName string, field EntityFi
 		fieldType = "VARCHAR(" + strconv.Itoa(field.MaxLen) + ")"
 
 	}
-	sqlCmdCreateTableStr := "ALTER TABLE " + e.quote(tableName) + " ADD COLUMN " + e.quote(field.Name) + " " + fieldType + " " + isNotNull
+	sqlCmdAlterTableAddColumnStr := "ALTER TABLE " + e.quote(tableName) + " ADD COLUMN " + e.quote(field.Name) + " " + fieldType + " " + isNotNull
 	if dfValue != "" {
-		sqlCmdCreateTableStr += " DEFAULT " + dfValue
+		sqlCmdAlterTableAddColumnStr += " DEFAULT " + dfValue
 	}
 	if collation != "" {
-		sqlCmdCreateTableStr += collation
+		sqlCmdAlterTableAddColumnStr += collation
 	}
 	return SqlCommandAddColumn{
-		string:    sqlCmdCreateTableStr,
+		string:    sqlCmdAlterTableAddColumnStr,
 		TableName: tableName,
 		ColName:   field.Name,
 	}
@@ -344,6 +370,23 @@ func (e *executorMySql) createDb(dbName string) func(dbMaster DBX, dbTenant DBXT
 		}
 		// Switch to the new database
 		dbTenant.TenantDbName = dbName
+		dbTenant.Open()
+		defer dbTenant.Close()
+		// _, err = dbTenant.DB.Exec("DROP FUNCTION IF EXISTS dbx_HighlightText")
+		// if err != nil {
+		// 	return err
+		// }
+		_, err = dbTenant.DB.Exec(mysql_create_dbx_HighlightText_function())
+		if err != nil {
+			if mysqlErr, ok := err.(*mysql.MySQLError); ok {
+				if mysqlErr.Number != 1304 {
+					// ignore error if function already exists
+					return err
+				}
+			}
+
+		}
+
 		// cache the createDb function
 		createDbMysqlCache.Store(dbName, true)
 

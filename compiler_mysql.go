@@ -2,6 +2,7 @@ package dbx
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -158,6 +159,28 @@ func mysqlParseFunction(w Compiler, node Node) (Node, error) {
 		if fnName == "len" {
 			node.V = "LENGTH"
 		}
+		if fnName == "search_highlight" {
+			return mysql_search_highlight(w, node)
+
+		}
 	}
+
+	return node, nil
+}
+func mysql_search_highlight(w Compiler, node Node) (Node, error) {
+	if len(node.C) != 3 {
+		//search_highlight('<b>,</b>',SearchText, 'ca phe thom')
+		return node, fmt.Errorf("search_highlight function requires 3 parameters. ex: search_highlight('<b>,</b>',table.field, 'search_text')")
+	}
+
+	if !strings.Contains(node.C[0].V, ",") {
+		return node, fmt.Errorf("the first parameter of search_highlight function is invalid, it should be a string with comma separated values, real value is %s", node.C[0].V)
+	}
+	//[dbo].[dbx_HighlightText]('<b>','</b>',N'cà phê cực ngon',N'cà pháo dở')
+	node.C[0].V = strings.Replace(node.C[0].V, "'", "", -1)
+	startTag := strings.Split(node.C[0].V, ",")[0]
+	endTag := strings.Split(node.C[0].V, ",")[1]
+	node.V = fmt.Sprintf("dbx_HighlightText('%s','%s',%s,%s)", startTag, endTag, node.C[1].V, node.C[2].V)
+	node.IsResolved = true
 	return node, nil
 }

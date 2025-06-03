@@ -170,6 +170,7 @@ func (dbx DBX) GetTenant(dbName string) (*DBXTenant, error) {
 	}
 	dbTenant.Open()
 	defer dbTenant.Close()
+
 	for _, e := range _entities.GetEntities() {
 
 		err = dbTenant.executor.createTable(dbName, e)(dbTenant.DB)

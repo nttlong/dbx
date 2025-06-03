@@ -221,6 +221,7 @@ func (w Compiler) Parse(sql string, args ...interface{}) (string, error) {
 	sql = strings.TrimRight(sql, " ")
 	sql = strings.Replace(sql, "  ", " ", -1)
 	cacheSqlParse.Store(sql, SQLParseInfo{SQL: sql, Params: nil})
+	fmt.Println(w.Quote.Left)
 	return sql, nil
 }
 

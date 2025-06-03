@@ -115,7 +115,7 @@ func (e *executorPostgres) makeAlterTableAddColumn(tableName string, field Entit
 		}
 
 		//fmt.Println(ret.String())
-		ret.IsFullTextSeachColumn = true
+		ret.IsFullTextSearchColumn = true
 		return ret
 
 	}
