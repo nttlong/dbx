@@ -300,6 +300,7 @@ func (dbx *DBXTenant) Query(query string, args ...interface{}) (*Rows, error) {
 		return nil, err
 	}
 	sqlQuery, args = applySliceArgsToQuery(sqlQuery, args)
+	fmt.Println(sqlQuery)
 
 	ret, err := dbx.DB.Query(sqlQuery, args...)
 	fmt.Print(sqlQuery)

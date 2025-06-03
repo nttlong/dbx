@@ -3,6 +3,7 @@ package dbx
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -190,15 +191,52 @@ func mssqlParseFunction(w Compiler, node Node) (Node, error) {
 func (w CompilerMssql) Parse(sql string, args ...interface{}) (string, error) {
 
 	sql, err := w.Compiler.Parse(sql, args)
+	if err != nil {
+		return "", err
+	}
+	if !strings.Contains(sql, " --select-- ") {
+		return sql, nil
+	}
+	selectStr := strings.Split(sql, " --select-- ")[0]
+	fromClause := strings.Split(sql, " --select-- ")[1]
+	realFromClause := fromClause
+	limit := -1
+	if strings.Contains(fromClause, "%LIMIT%(") {
+		realFromClause = strings.Split(realFromClause, "%LIMIT%(")[0]
+		limitClause := strings.Split(fromClause, "%LIMIT%(")[1]
+		limitClause = strings.Split(limitClause, ")")[0]
+		limit, err = strconv.Atoi(limitClause)
+		if err != nil {
+			return "", err
+		}
+	}
+	offset := -1
+	if strings.Contains(fromClause, "%OFFSET%(") {
+		realFromClause = strings.Split(realFromClause, "%OFFSET%(")[0]
+		offsetClause := strings.Split(fromClause, "%OFFSET%(")[1]
+		offsetClause = strings.Split(offsetClause, ")")[0]
+		offset, err = strconv.Atoi(offsetClause)
+		if err != nil {
+			return "", err
+		}
+	}
+	retSQL := selectStr + " " + realFromClause
+	if limit > -1 && offset == -1 {
+		retSQL = selectStr + " TOP(" + strconv.Itoa(limit) + ") " + realFromClause
+	} else if offset > -1 && limit == -1 {
+		/*
+					SELECT column1, column2
+			FROM table_name
+			ORDER BY column
+			OFFSET m ROWS FETCH NEXT n ROWS ONLY;
+		*/
+		retSQL = selectStr + " " + realFromClause + " OFFSET " + strconv.Itoa(offset) + " ROWS"
+	} else if offset > -1 && limit > -1 {
+		retSQL = selectStr + " " + realFromClause + " OFFSET " + strconv.Itoa(offset) + " ROWS FETCH NEXT " + strconv.Itoa(limit) + " ROWS ONLY"
+	}
+	return retSQL, nil
 
-	if err != nil {
-		return "", err
-	}
-	mxlQr, err := createQueryDefinitionFromXml(sql)
-	if err != nil {
-		return "", err
-	}
-	return mxlQr.toMssql(), nil
+	// sql looks like "SELECT --select-- * FROM [Employees] %LIMIT%(1)"
 
 }
 func mssql_search_filter(w Compiler, node Node) (Node, error) {
@@ -258,7 +296,7 @@ func mssql_search_score(w Compiler, node Node) (Node, error) {
 	fmt.Println(freeTextTableNameAlias)
 
 	fmt.Println(retStr)
-	node.V = "<sql-server-fts>" + retStr + "<alias_tfs>" + freeTextTableNameAlias + "</alias_tfs>" + "</sql-server-fts>"
+	node.V = "<sql-server-fts>" + retStr + "</sql-server-fts>"
 	node.IsResolved = true
 	return node, nil
 }

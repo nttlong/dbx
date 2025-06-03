@@ -119,8 +119,14 @@ func TestJsonbPG(t *testing.T) {
 		Score      float64
 		SearchText string
 	}
-	lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id,SearchText,search_highlight('<b>,</b>',SearchText, ?) Hl ,search_score(search_table(FullTestSearchTest,ID),SearchText, ?) Score from FullTestSearchTest order by Score desc limit 10", "cà phê thối", "cà phê thối")
-	//lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id,SearchText,search_highlight('<b>,</b>',SearchText, ?) Hl from FullTestSearchTest  limit 10", "cà phê thối")
+	lst, err := dbx.Select[HiSt](TenantDbPg, `select * from
+												( select ID id,
+													SearchText,
+													search_highlight('<b>,</b>',SearchText, ?) Hl ,
+													search_score(search_table(FullTestSearchTest,ID),SearchText, ?)
+													Score from FullTestSearchTest where Id in (select ID from FullTestSearchTest)
+												) sql order by Score desc limit 10`, "cà phê thối", "cà phê thối")
+	// lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id,SearchText,search_highlight('<b>,</b>',SearchText, ?) Hl from FullTestSearchTest  limit 10", "cà phê thối")
 	//lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id, search_score(search_table(FullTestSearchTest,ID), SearchText, 'ca phe thom') Score,search_highlight('<b>,</b>',SearchText, 'ca phe thom') Hl from FullTestSearchTest where search_filter(SearchText,'ca phe thom') order by Score desc limit 10")
 	assert.NoError(t, err)
 	assert.True(t, len(lst) > 0)

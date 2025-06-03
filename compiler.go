@@ -527,7 +527,7 @@ func (w Compiler) walkSQLNode(node sqlparser.SQLNode, ctx *ParseContext) (string
 				return "", err
 			}
 
-			return "<limit>" + rc + "</limit>", nil
+			return "%LIMIT%(" + rc + ")", nil
 		}
 
 		if fx.Offset != nil && fx.Rowcount == nil {
@@ -536,7 +536,7 @@ func (w Compiler) walkSQLNode(node sqlparser.SQLNode, ctx *ParseContext) (string
 				return "", err
 			}
 
-			return "<offset>" + off + "</offset>", nil
+			return "%OFFSET%(" + off + ")", nil
 		}
 		if fx.Offset != nil && fx.Rowcount != nil {
 			ofs, err := w.walkSQLNode(fx.Offset, ctx)
@@ -552,7 +552,7 @@ func (w Compiler) walkSQLNode(node sqlparser.SQLNode, ctx *ParseContext) (string
 				return "", err
 			}
 
-			return "<offset>" + n.Offset + "</offset> <limit>" + n.Limit + "</limit>", nil
+			return "%OFFSET%(" + n.Offset + ")%LIMIT%(" + n.Limit + ")", nil
 		}
 
 	}
@@ -818,30 +818,37 @@ func (w Compiler) walkOnSelect(stmt *sqlparser.Select, ctx *ParseContext) (strin
 		if err != nil {
 			return "", err
 		}
-		strFrom = from
+		strFrom = "FROM " + from
 
 	}
 	// grNodes := ctx.groupWithAs()
 
 	selectFields := []string{}
+	isSpecialFTSForSQLServer := false
 	for _, sel := range stmt.SelectExprs {
 
 		s, err := w.walkSQLNode(sel, ctx)
 		if err != nil {
 			return "", err
 		}
+		if strings.Contains(s, "<sql-server-fts>") && strings.Contains(s, "</sql-server-fts>") {
+			isSpecialFTSForSQLServer = true
+		}
 		selectFields = append(selectFields, s)
 
 	}
-	strSelect = "<select>" + strings.Join(selectFields, ", ") + "</select>"
-	ret = append(ret, strSelect, "<from>"+strFrom+"</from>")
+	strSelect = "SELECT --select-- " + strings.Join(selectFields, ", ")
+	if isSpecialFTSForSQLServer {
+		strFrom += " ??--sql-server-fts--?? "
+	}
+	ret = append(ret, strSelect, strFrom)
 
 	if stmt.GroupBy != nil {
 		groupBy, err := w.walkSQLNode(stmt.GroupBy, ctx)
 		if err != nil {
 			return "", err
 		}
-		ret = append(ret, "<group>"+groupBy+"</group>")
+		ret = append(ret, "GROUP BY "+groupBy)
 
 	}
 	if stmt.Having != nil {
@@ -849,14 +856,14 @@ func (w Compiler) walkOnSelect(stmt *sqlparser.Select, ctx *ParseContext) (strin
 		if err != nil {
 			return "", err
 		}
-		ret = append(ret, "<having>"+groupBy+"</having>")
+		ret = append(ret, "HAVING "+groupBy)
 	}
 	if stmt.Where != nil {
 		where, err := w.walkSQLNode(stmt.Where, ctx)
 		if err != nil {
 			return "", err
 		}
-		ret = append(ret, "<where>"+where+"</where>")
+		ret = append(ret, "WHERE "+where)
 	}
 
 	if stmt.OrderBy != nil {
@@ -864,7 +871,7 @@ func (w Compiler) walkOnSelect(stmt *sqlparser.Select, ctx *ParseContext) (strin
 		if err != nil {
 			return "", err
 		}
-		ret = append(ret, "<order>"+orderBy+"</order>")
+		ret = append(ret, "ORDER BY "+orderBy)
 	}
 
 	if stmt.Limit != nil {
@@ -1083,13 +1090,6 @@ func (w Compiler) walkOnOrderBy(expr *sqlparser.OrderBy, ctx *ParseContext) (str
 
 // }
 
-func (w Compiler) walkOnSubquery(stmt sqlparser.Subquery, ctx *ParseContext) (string, error) {
-	subquery, err := w.walkOnStatement(stmt.Select, ctx)
-	if err != nil {
-		return "", err
-	}
-	return "(" + subquery + ")", nil
-}
 func (w Compiler) walkOnGroupBy(stmt sqlparser.GroupBy, ctx *ParseContext) (string, error) {
 	ret := []string{}
 	for _, expr := range stmt {
