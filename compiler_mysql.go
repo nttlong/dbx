@@ -2,7 +2,9 @@ package dbx
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -150,6 +152,9 @@ func onCompilerMySql(w Compiler, node Node) (Node, error) {
 	}
 	return node, nil
 }
+
+var mysql_search_score_explain = `The search_score function is designed to accept a search_table parameter, which in turn requires TableName and KeyField as arguments (e.g., search_score(search_table(TableName, KeyField), FieldSearch, KeySearch)). This design choice is crucial because the underlying library is built to support various RDBMS, including SQL Server. In SQL Server, full-text search scoring functions (such as CONTAINSTABLE or FREETEXTTABLE) inherently necessitate both the table name and its primary key to accurately compute and return relevance scores. Therefore, even if you are currently using this library with MySQL, this parameter structure is in place to ensure compatibility and proper functionality across all supported database systems.`
+
 func mysqlParseFunction(w Compiler, node Node) (Node, error) {
 	if node.Nt == Function {
 		fnName := strings.ToLower(node.V)
@@ -163,9 +168,51 @@ func mysqlParseFunction(w Compiler, node Node) (Node, error) {
 			return mysql_search_highlight(w, node)
 
 		}
+		if fnName == "search_filter" {
+			return mysql_search_filter(w, node)
+		}
+		if fnName == "search_score" {
+			return mysql_search_score(w, node)
+		}
+		if fnName == "search_table" {
+			if len(node.C) != 2 {
+				return node, errors.New(mysql_search_score_explain)
+			}
+			node.V = "search_table!" + node.C[0].V + "!" + node.C[1].V
+			node.IsResolved = true
+			return node, nil
+		}
 	}
 
 	return node, nil
+}
+func mysql_search_score(w Compiler, node Node) (Node, error) {
+	//MATCH(`SearchText`) AGAINST('ca phe thom' IN NATURAL LANGUAGE MODE)
+	if len(node.C) != 3 {
+		return node, errors.New(mysql_search_score_explain)
+	}
+	if !strings.Contains(node.C[0].V, "!") {
+		return node, errors.New(mysql_search_score_explain)
+	}
+	if !strings.HasPrefix(node.C[0].V, "search_table!") {
+		return node, errors.New(mysql_search_score_explain)
+	}
+
+	node.V = "MATCH(" + node.C[1].V + ") AGAINST(" + node.C[2].V + " IN NATURAL LANGUAGE MODE)"
+	node.IsResolved = true
+	return node, nil
+
+}
+func mysql_search_filter(w Compiler, node Node) (Node, error) {
+	//    MATCH(`field_name`) AGAINST(params IN NATURAL LANGUAGE MODE) > 0
+
+	if len(node.C) != 2 {
+		return node, fmt.Errorf("search_filter function requires 2 parameters. ex: search_filter(table.field, 'search_text')")
+	}
+	node.V = "MATCH(" + node.C[0].V + ") AGAINST(" + node.C[1].V + " IN NATURAL LANGUAGE MODE)"
+	node.IsResolved = true
+	return node, nil
+
 }
 func mysql_search_highlight(w Compiler, node Node) (Node, error) {
 	if len(node.C) != 3 {
@@ -183,4 +230,61 @@ func mysql_search_highlight(w Compiler, node Node) (Node, error) {
 	node.V = fmt.Sprintf("dbx_HighlightText('%s','%s',%s,%s)", startTag, endTag, node.C[1].V, node.C[2].V)
 	node.IsResolved = true
 	return node, nil
+}
+func (w *CompilerMySql) Parse(sqlInput string, args ...interface{}) (string, error) {
+	sql, err := w.Compiler.Parse(sqlInput, args...)
+
+	if err != nil {
+		return "", err
+	}
+	if !strings.Contains(sql, " --select-- ") {
+		return sql, nil
+	}
+	selectStr := strings.Split(sql, " --select-- ")[0]
+	fromClause := strings.Split(sql, " --select-- ")[1]
+	realFromClause := fromClause
+	limit := -1
+	if strings.Contains(fromClause, "%LIMIT%(") {
+		realFromClause = strings.Split(realFromClause, "%LIMIT%(")[0]
+		limitClause := strings.Split(fromClause, "%LIMIT%(")[1]
+		limitClause = strings.Split(limitClause, ")")[0]
+		limit, err = strconv.Atoi(limitClause)
+		if err != nil {
+			return "", err
+		}
+	}
+	offset := -1
+	if strings.Contains(fromClause, "%OFFSET%(") {
+		realFromClause = strings.Split(realFromClause, "%OFFSET%(")[0]
+		offsetClause := strings.Split(fromClause, "%OFFSET%(")[1]
+		offsetClause = strings.Split(offsetClause, ")")[0]
+		offset, err = strconv.Atoi(offsetClause)
+		if err != nil {
+			return "", err
+		}
+	}
+	retSQL := selectStr + " " + realFromClause
+	if limit > -1 && offset == -1 {
+		//this is postgres so sql compiler will produce sql looks like
+		// SELECT EmployeeId, Code, FirstName, LastName, BasicSalary FROM Employees LIMIT 100;
+		retSQL = selectStr + realFromClause + " LIMIT " + strconv.Itoa(limit)
+	} else if offset > -1 && limit == -1 {
+		/*
+					SELECT column1, column2
+			FROM table_name
+			ORDER BY column
+			OFFSET m ROWS FETCH NEXT n ROWS ONLY;
+		*/
+		retSQL = selectStr + " " + realFromClause + " OFFSET " + strconv.Itoa(offset) + " ROWS"
+	} else if offset > -1 && limit > -1 {
+		/**
+				SELECT column1, column2, ...
+		FROM your_table_name
+		ORDER BY some_column -- RẤT QUAN TRỌNG: Luôn sử dụng ORDER BY khi dùng OFFSET và LIMIT
+		LIMIT 10 OFFSET 100;
+		*/
+		retSQL = selectStr + " " + realFromClause + " LIMIT " + strconv.Itoa(limit) + " OFFSET " + strconv.Itoa(offset)
+	}
+	return retSQL, nil
+
 }

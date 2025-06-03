@@ -107,12 +107,12 @@ func TestJsonbPG(t *testing.T) {
 	TestCreateTenantDbWithFullTextSearchColumnInEntity(t)
 	TenantDbPg.Open()
 	defer TenantDbPg.Close()
-	dbx.Insert(TenantDbPg, FullTestSearchTest{
-		SearchText: "Cà phê thơm",
-	})
-	dbx.Insert(TenantDbPg, FullTestSearchTest{
-		SearchText: "Cà pháo thối",
-	})
+	// dbx.Insert(TenantDbPg, FullTestSearchTest{
+	// 	SearchText: "Cà phê thơm",
+	// })
+	// dbx.Insert(TenantDbPg, FullTestSearchTest{
+	// 	SearchText: "Cà pháo thối",
+	// })
 	type HiSt struct {
 		id         int
 		Hl         string
@@ -126,7 +126,7 @@ func TestJsonbPG(t *testing.T) {
 	// 												search_score(search_table(FullTestSearchTest,ID),SearchText, ?)
 	// 												Score from FullTestSearchTest where ID in (select ID from FullTestSearchTest)
 	// 											) sql order by Score desc limit 10`, "cà phê thối", "cà phê thối")
-	lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id,SearchText,search_highlight('<b>,</b>',SearchText, ?) Hl from FullTestSearchTest  limit 10", "cà phê thối")
+	lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id,SearchText,search_score(search_table(FullTestSearchTest,ID), SearchText, ?) as Score,search_highlight('<b>,</b>',SearchText, ?) Hl from FullTestSearchTest order by Score desc limit 10", "cà phê thối", "cà phê thối")
 	//lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id, search_score(search_table(FullTestSearchTest,ID), SearchText, 'ca phe thom') Score,search_highlight('<b>,</b>',SearchText, 'ca phe thom') Hl from FullTestSearchTest where search_filter(SearchText,'ca phe thom') order by Score desc limit 10")
 	assert.NoError(t, err)
 	assert.True(t, len(lst) > 0)
