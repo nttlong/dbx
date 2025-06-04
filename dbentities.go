@@ -57,7 +57,7 @@ func (ctx *DBXTenant) Insert(entity interface{}) error {
 	}
 }
 func (ctx *DBXTenant) mysqlInsert(tblInfo *EntityType, entity interface{}) error {
-	err := postgresMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
+	err := mySqlMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
 
 	if err != nil {
 		return err

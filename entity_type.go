@@ -1,8 +1,6 @@
 package dbx
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"reflect"
 	"sort"
@@ -37,13 +35,13 @@ type EntityField struct {
 	AllowNull    bool
 	IsPrimaryKey bool
 
-	DefaultValue     string
-	MaxLen           int
-	ForeignKey       string
-	IndexName        string
-	UkName           string
-	NonPtrFieldType  reflect.Type
-	HashKey          string
+	DefaultValue    string
+	MaxLen          int
+	ForeignKey      string
+	IndexName       string
+	UkName          string
+	NonPtrFieldType reflect.Type
+
 	IsFullTextSearch bool
 	IsBSON           bool
 }
@@ -226,17 +224,7 @@ func (f *EntityField) initPropertiesByTags() error {
 		}
 
 	}
-	strKey := `key_{{r.Name}}_{{strTags}}`
-	// sha256 content of strKey
-	hash := sha256.New()
-	_, err := hash.Write([]byte(strKey))
-	if err != nil {
-		return fmt.Errorf("Error writing to hash:", err)
-	}
-	hashBytes := hash.Sum(nil)
-	hashString := hex.EncodeToString(hashBytes)
 
-	f.HashKey = hashString
 	return nil
 
 }

@@ -99,14 +99,15 @@ type DbDllCommand struct {
 	CommandText *string
 }
 type Node struct {
-	Nt         NodeType
-	V          string // Value of the node
-	C          []Node // Children of the node
-	Offset     string
-	Limit      string
-	Un         *UsingNodeOnDelete
-	IsResolved bool // If the node is resolved
-	ctx        *ParseContext
+	Nt           NodeType
+	V            string // Value of the node
+	C            []Node // Children of the node
+	Offset       string
+	Limit        string
+	Un           *UsingNodeOnDelete
+	IsResolved   bool // If the node is resolved
+	ctx          *ParseContext
+	indexOfParam int
 }
 
 // type DbDmlCmds []*DbDmlCommand
@@ -208,6 +209,9 @@ func (w Compiler) ParseInsertSQL(sql string, autoValueCols []string, returnColAf
 }
 
 func (w Compiler) Parse(sql string, args ...interface{}) (string, error) {
+	sql = strings.ReplaceAll(sql, "\n", " ")
+	sql = strings.ReplaceAll(sql, "\t", " ")
+
 	if cached, ok := cacheSqlParse.Load(sql); ok {
 		return cached.(SQLParseInfo).SQL, nil
 	}

@@ -1,7 +1,9 @@
 package dbx
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -51,7 +53,7 @@ type FullTestSearchTest struct {
 
 func TestCreateTenantDbWithFullTextSearchColumnInEntity(t *testing.T) {
 	dbx.AddEntities(FullTestSearchTest{})
-	db := dbx.NewDBX(getMysqlConfig())
+	db := dbx.NewDBX(getMssqlConfig())
 	err := db.Open()
 	if err != nil {
 		panic(err)
@@ -105,22 +107,63 @@ func TestDetect(t *testing.T) {
 	cols = DetectFuncFullTextSearchColumn(&FullTestSearchTest{})
 	assert.Equal(t, []string{}, cols)
 }
-func TestJsonbPG(t *testing.T) {
+
+type HiSt struct {
+	id         int
+	Hl         string
+	Score      float64
+	SearchText string
+}
+
+func TestInsertByTextFile(t *testing.T) {
 	TestCreateTenantDbWithFullTextSearchColumnInEntity(t)
 	TenantDbPg.Open()
 	defer TenantDbPg.Close()
+	filePath := `E:\Docker\go\dbx\cmd\data_test\test.txt`
+	//read text file
+	file, err := os.Open(filePath)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	dataTest := []string{}
+	for scanner.Scan() {
+		line := scanner.Text()
+		if len(line) > 0 {
+			dataTest = append(dataTest, line)
+
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		panic(err)
+	}
+	for i := 0; i < 100000; i++ {
+		start := time.Now()
+		for _, line := range dataTest {
+			dataInsert := FullTestSearchTest{
+				SearchText: dbx.FullTextSearchColumn(line),
+			}
+			err = dbx.Insert(TenantDbPg, &dataInsert)
+			if err != nil {
+				fmt.Println("[", i, "]", err)
+			}
+		}
+		end := time.Now()
+		fmt.Println("time:", i, end.Sub(start).Milliseconds())
+	}
+
+}
+func TestJsonbPG(t *testing.T) {
+	TestCreateTenantDbWithFullTextSearchColumnInEntity(t)
 	// dbx.Insert(TenantDbPg, FullTestSearchTest{
 	// 	SearchText: "Cà phê thơm",
 	// })
 	// dbx.Insert(TenantDbPg, FullTestSearchTest{
 	// 	SearchText: "Cà pháo thối",
 	// })
-	type HiSt struct {
-		id         int
-		Hl         string
-		Score      float64
-		SearchText string
-	}
+
 	// lst, err := dbx.Select[HiSt](TenantDbPg, `select * from
 	// 											( select ID Id,
 	// 												SearchText,
@@ -128,12 +171,29 @@ func TestJsonbPG(t *testing.T) {
 	// 												search_score(search_table(FullTestSearchTest,ID),SearchText, ?)
 	// 												Score from FullTestSearchTest where ID in (select ID from FullTestSearchTest)
 	// 											) sql order by Score desc limit 10`, "cà phê thối", "cà phê thối")
-	start := time.Now()
-	lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id,SearchText,search_score(search_table(FullTestSearchTest,ID), SearchText, ?) as Score,search_highlight('<b>,</b>',SearchText, ?) Hl from FullTestSearchTest order by Score desc limit 10", "cà phê thối", "cà phê thối")
-	//lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id, search_score(search_table(FullTestSearchTest,ID), SearchText, 'ca phe thom') Score,search_highlight('<b>,</b>',SearchText, 'ca phe thom') Hl from FullTestSearchTest where search_filter(SearchText,'ca phe thom') order by Score desc limit 10")
-	n := time.Since(start).Milliseconds()
-	fmt.Println("time:", n)
-	assert.NoError(t, err)
-	assert.True(t, len(lst) > 0)
+	TenantDbPg.Open()
+	defer TenantDbPg.Close()
+	sql := dbx.SQL[HiSt](`select ID 
+								id,
+								SearchText,
+								search_highlight('<b>,</b>', SearchText, @searchContent) as Hl,
+								search_score(search_table(FullTestSearchTest,ID), SearchText, @searchContent) as Score
+								from FullTestSearchTest`)
+	sql.Params("searchContent", "cao dấu hiệu bạo lực")
+	sql.Params("hl", "<b>,</b>")
+	for i := 0; i < 100000; i++ {
+		start := time.Now()
+		lst, err := sql.Item(TenantDbPg)
+		//lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id, search_score(search_table(FullTestSearchTest,ID), SearchText, 'ca phe thom') Score,search_highlight('<b>,</b>',SearchText, 'ca phe thom') Hl from FullTestSearchTest where search_filter(SearchText,'ca phe thom') order by Score desc limit 10")
+		n := time.Since(start).Milliseconds()
+		if err != nil {
+			fmt.Println("[", i, "]", err)
+		} else {
+			fmt.Println("time:", n, "rows:", lst)
+		}
+
+	}
+	// assert.NoError(t, err)
+	// assert.True(t, len(lst) > 0)
 
 }

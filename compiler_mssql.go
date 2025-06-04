@@ -141,6 +141,12 @@ func onCompilerMssql(w Compiler, node Node) (Node, error) {
 
 	}
 	if node.Nt == Params {
+		strIndexOfParam := node.V[1:]
+		indexOfParam, err := strconv.Atoi(strIndexOfParam)
+		if err != nil {
+			return node, err
+		}
+		node.indexOfParam = indexOfParam
 		node.V = "?"
 	}
 	if node.Nt == Function {
@@ -234,6 +240,16 @@ func (w CompilerMssql) Parse(sql string, args ...interface{}) (string, error) {
 	} else if offset > -1 && limit > -1 {
 		retSQL = selectStr + " " + realFromClause + " OFFSET " + strconv.Itoa(offset) + " ROWS FETCH NEXT " + strconv.Itoa(limit) + " ROWS ONLY"
 	}
+	if strings.Contains(retSQL, "<sql-server-fts>") && strings.Contains(retSQL, "</sql-server-fts>") {
+		sql_server_fts := strings.Split(retSQL, "<sql-server-fts>")[1]
+		sql_server_fts = strings.Split(sql_server_fts, "</sql-server-fts>")[0]
+		sql_server_fts_alias := strings.Split(sql_server_fts, " AS ")[1]
+		sql_server_fts_alias = strings.Split(sql_server_fts_alias, " ")[0]
+		sql_server_fts_alias += ".RANK"
+		retSQL = strings.Replace(retSQL, "<sql-server-fts>"+sql_server_fts+"</sql-server-fts>", sql_server_fts_alias, -1)
+		retSQL = strings.Replace(retSQL, "??--sql-server-fts--??", sql_server_fts, 1)
+
+	}
 	return retSQL, nil
 
 	// sql looks like "SELECT --select-- * FROM [Employees] %LIMIT%(1)"
@@ -293,9 +309,6 @@ func mssql_search_score(w Compiler, node Node) (Node, error) {
 	retStr = strings.Replace(retStr, "@aliasName", freeTextTableNameAlias, -1)
 	retStr = strings.Replace(retStr, "@argName", node.C[2].V, -1)
 
-	fmt.Println(freeTextTableNameAlias)
-
-	fmt.Println(retStr)
 	node.V = "<sql-server-fts>" + retStr + "</sql-server-fts>"
 	node.IsResolved = true
 	return node, nil

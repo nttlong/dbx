@@ -301,11 +301,11 @@ func (dbx *DBXTenant) Query(query string, args ...interface{}) (*Rows, error) {
 		return nil, err
 	}
 	sqlQuery, args = applySliceArgsToQuery(sqlQuery, args)
-	fmt.Println(sqlQuery)
 
 	ret, err := dbx.DB.Query(sqlQuery, args...)
-	fmt.Print(sqlQuery)
+
 	if err != nil {
+		fmt.Print(red, "ERROR:", err, "\n", green, sqlQuery, reset)
 		return nil, err
 	}
 	return &Rows{ret}, nil
@@ -479,7 +479,7 @@ func Find[T any](args ...interface{}) func(dbx *DBXTenant) ([]T, error) {
 			}
 
 		} else if conType == reflect.TypeOf("") {
-			fmt.Println(args)
+			fmt.Println(conType)
 
 		} else {
 			var zero T

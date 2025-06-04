@@ -12,10 +12,10 @@ func (w Compiler) walkOnSubquery(stmt sqlparser.Subquery, ctx *ParseContext) (st
 		return "", err
 	}
 	subquery = strings.Replace(subquery, "SELECT --select-- ", "SELECT ", 1)
-	sql_server_fts := ""
+
 	// special process for sql server full-text search
 	if strings.Contains(subquery, "<sql-server-fts>") && strings.Contains(subquery, "</sql-server-fts>") {
-		sql_server_fts = strings.Split(subquery, "<sql-server-fts>")[1]
+		sql_server_fts := strings.Split(subquery, "<sql-server-fts>")[1]
 		sql_server_fts = strings.Split(sql_server_fts, "</sql-server-fts>")[0]
 		sql_server_fts_alias := strings.Split(sql_server_fts, " AS ")[1]
 		sql_server_fts_alias = strings.Split(sql_server_fts_alias, " ")[0]
