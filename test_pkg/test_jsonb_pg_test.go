@@ -1,8 +1,10 @@
 package dbx
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/nttlong/dbx"
 	"github.com/stretchr/testify/assert"
@@ -126,8 +128,11 @@ func TestJsonbPG(t *testing.T) {
 	// 												search_score(search_table(FullTestSearchTest,ID),SearchText, ?)
 	// 												Score from FullTestSearchTest where ID in (select ID from FullTestSearchTest)
 	// 											) sql order by Score desc limit 10`, "cà phê thối", "cà phê thối")
+	start := time.Now()
 	lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id,SearchText,search_score(search_table(FullTestSearchTest,ID), SearchText, ?) as Score,search_highlight('<b>,</b>',SearchText, ?) Hl from FullTestSearchTest order by Score desc limit 10", "cà phê thối", "cà phê thối")
 	//lst, err := dbx.Select[HiSt](TenantDbPg, "select ID id, search_score(search_table(FullTestSearchTest,ID), SearchText, 'ca phe thom') Score,search_highlight('<b>,</b>',SearchText, 'ca phe thom') Hl from FullTestSearchTest where search_filter(SearchText,'ca phe thom') order by Score desc limit 10")
+	n := time.Since(start).Milliseconds()
+	fmt.Println("time:", n)
 	assert.NoError(t, err)
 	assert.True(t, len(lst) > 0)
 
