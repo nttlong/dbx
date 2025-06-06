@@ -409,14 +409,27 @@ func (e *executorPostgres) createTable(dbname string, entity interface{}) func(d
 					} else {
 						fmt.Println(red + "Error: " + reset + err.Error())
 						fmt.Println(red + "SQL: " + reset + sqlCmd.String())
-						return pqErr
+						return DBXMigrationError{
+							Message:   err.Error(),
+							Code:      string(pqErr.Code),
+							Err:       err,
+							DBName:    dbname,
+							TableName: entityType.Name(),
+							Sql:       sqlCmd.String(),
+						}
 					}
 
 				} else {
 					fmt.Println(red + "Error: " + reset + err.Error())
 					fmt.Println(red + "SQL: " + reset + sqlCmd.String())
 
-					return err
+					return DBXMigrationError{
+						Message:   err.Error(),
+						Code:      "unknown",
+						Err:       err,
+						DBName:    dbname,
+						TableName: entityType.Name(),
+					}
 				}
 
 			}

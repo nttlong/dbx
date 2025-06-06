@@ -1,12 +1,14 @@
 package dbx
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -149,7 +151,25 @@ func (dbx *DBX) Ping() error {
 	}
 	return dbx.DB.Ping()
 }
+
+var cachDBXTenant = sync.Map{}
+
 func (dbx DBX) GetTenant(dbName string) (*DBXTenant, error) {
+	//check cache
+	if v, ok := cachDBXTenant.Load(dbName); ok {
+		return v.(*DBXTenant), nil
+	}
+	//create new tenant
+	dbTenant, err := dbx.getTenant(dbName)
+	if err != nil {
+		return nil, err
+	}
+	cachDBXTenant.Store(dbName, dbTenant)
+	return dbTenant, nil
+
+}
+func (dbx DBX) getTenant(dbName string) (*DBXTenant, error) {
+
 	oldDb := dbx.DB
 	dbx.Open()
 	defer func() {
@@ -199,6 +219,25 @@ func (dbx *DBXTenant) Exec(query string, args ...interface{}) (sql.Result, error
 		return nil, err
 	}
 	return dbx.DB.Exec(sqlExec, args...)
+}
+func (dbx *DBXTenant) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	sqlExec, err := dbx.compiler.Parse(query)
+	if err != nil {
+		return nil, err
+	}
+	ret, err := dbx.DB.ExecContext(ctx, sqlExec, args...)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+
+}
+func (dbx *DBXTenant) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	sqlQuery, err := dbx.compiler.Parse(query)
+	if err != nil {
+		return nil
+	}
+	return dbx.DB.QueryRowContext(ctx, sqlQuery, args...)
 }
 
 // applySliceArgsToQuery processes a query and args, expanding placeholders for slices and flattening args.

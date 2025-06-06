@@ -1,4 +1,4 @@
-module github.com/nttlong/dbx
+module dbx
 
 go 1.24.3
 

@@ -1,6 +1,7 @@
 package dbx
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -45,18 +46,66 @@ func (ctx *DBXTenant) Insert(entity interface{}) error {
 		return err
 	}
 	if ctx.cfg.Driver == "postgres" {
-		return ctx.pgInsert(tblInfo, entity)
+		return ctx.pgInsert(nil, tblInfo, entity)
 	} else if ctx.cfg.Driver == "mysql" {
-		return ctx.mysqlInsert(tblInfo, entity)
+		return ctx.mysqlInsert(nil, tblInfo, entity)
 		//return ctx.myInsert(tblInfo, entity)
 	} else if ctx.cfg.Driver == "mssql" {
-		return ctx.mssqlInsert(tblInfo, entity)
+		return ctx.mssqlInsert(nil, tblInfo, entity)
 		//return ctx.myInsert(tblInfo, entity)
 	} else {
 		return fmt.Errorf("not support driver %s", ctx.cfg.Driver)
 	}
 }
-func (ctx *DBXTenant) mysqlInsert(tblInfo *EntityType, entity interface{}) error {
+func (ctx *DBXTenant) InsertWithContext(cntx context.Context, entity interface{}) error {
+	if ctx.DB == nil {
+		panic("please open TenantDbContext first")
+	}
+	if ctx.cfg.Driver == "postgres" {
+		err := postgresMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
+		if err != nil {
+			return err
+		}
+	} else if ctx.cfg.Driver == "mysql" {
+
+		err := mySqlMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
+		if err != nil {
+			return err
+		}
+	} else if ctx.cfg.Driver == "mssql" {
+
+		err := mssqlSqlMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
+		if err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("not support driver %s", ctx.cfg.Driver)
+	}
+
+	typ := reflect.TypeOf(entity)
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		return fmt.Errorf("entity must be a struct or a pointer to a struct")
+	}
+	tblInfo, err := newEntityType(typ)
+	if err != nil {
+		return err
+	}
+	if ctx.cfg.Driver == "postgres" {
+		return ctx.pgInsert(cntx, tblInfo, entity)
+	} else if ctx.cfg.Driver == "mysql" {
+		return ctx.mysqlInsert(cntx, tblInfo, entity)
+		//return ctx.myInsert(tblInfo, entity)
+	} else if ctx.cfg.Driver == "mssql" {
+		return ctx.mssqlInsert(cntx, tblInfo, entity)
+		//return ctx.myInsert(tblInfo, entity)
+	} else {
+		return fmt.Errorf("not support driver %s", ctx.cfg.Driver)
+	}
+}
+func (ctx *DBXTenant) mysqlInsert(cntx context.Context, tblInfo *EntityType, entity interface{}) error {
 	err := mySqlMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
 
 	if err != nil {
@@ -94,7 +143,13 @@ func (ctx *DBXTenant) mysqlInsert(tblInfo *EntityType, entity interface{}) error
 		return err
 	}
 	// start := time.Now()
-	result, err := db.Exec(sqlInsert, dataInsert.Params...)
+	var result sql.Result
+	if cntx == nil {
+		result, err = db.Exec(sqlInsert, dataInsert.Params...)
+	} else {
+		result, err = db.ExecContext(cntx, sqlInsert, dataInsert.Params...)
+	}
+
 	// fmt.Println("Insert time: ", time.Since(start).Milliseconds())
 	if err != nil {
 		// tx.Rollback()
@@ -133,7 +188,7 @@ func (ctx *DBXTenant) mysqlInsert(tblInfo *EntityType, entity interface{}) error
 	return nil
 
 }
-func (ctx *DBXTenant) pgInsert(tblInfo *EntityType, entity interface{}) error {
+func (ctx *DBXTenant) pgInsert(cntx context.Context, tblInfo *EntityType, entity interface{}) error {
 	err := postgresMigrateEntity(ctx.DB, ctx.TenantDbName, entity)
 
 	if err != nil {
@@ -163,12 +218,18 @@ func (ctx *DBXTenant) pgInsert(tblInfo *EntityType, entity interface{}) error {
 	}
 	// resultArray := []interface{}{}
 	//ctx.Open()
+	var rw *sql.Rows
+	var errQr error
+	if cntx == nil {
 
-	rw, err := ctx.DB.Query((*execSql2), dataInsert.Params...)
+		rw, errQr = ctx.DB.Query((*execSql2), dataInsert.Params...)
+	} else {
+		rw, errQr = ctx.DB.QueryContext(cntx, (*execSql2), dataInsert.Params...)
+	}
 
-	if err != nil {
+	if errQr != nil {
 
-		return err
+		return errQr
 	}
 	defer rw.Close()
 	cols, err := rw.Columns()
@@ -298,7 +359,7 @@ func (ctx *DBXTenant) mssqlInsertDelete(tblInfo *EntityType, entity interface{})
 
 	return nil
 }
-func (ctx *DBXTenant) mssqlInsert(tblInfo *EntityType, entity interface{}) error {
+func (ctx *DBXTenant) mssqlInsert(cntx context.Context, tblInfo *EntityType, entity interface{}) error {
 	// Kiểm tra ctx.DB, nếu chưa mở thì panic (giữ nguyên)
 	if ctx.DB == nil {
 		panic("please open TenantDbContext first")
@@ -340,32 +401,24 @@ func (ctx *DBXTenant) mssqlInsert(tblInfo *EntityType, entity interface{}) error
 	// Sử dụng sql.NullInt64 để chứa giá trị ID có thể là NULL
 	var insertedNullId sql.NullInt64
 
-	// Thực thi truy vấn bằng ctx.DB.QueryRow() thay vì tx.QueryRow()
-	// Đây là nơi thực thi câu lệnh SQL và scan kết quả ID
-	// sqlInsert := strings.Split(*execSql2, "\n")[0]
-	// sqlWithTryCatch := fmt.Sprintf(`
-	// 	BEGIN TRY
-	// 		%s; -- Câu lệnh INSERT gốc
-	// 		SELECT
-	// 			CAST(SCOPE_IDENTITY() AS BIGINT) AS InsertedId,
-	// 			NULL AS ErrorNumber,
-	// 			NULL AS ErrorMessage;
-	// 	END TRY
-	// 	BEGIN CATCH
-	// 		SELECT
-	// 			NULL AS InsertedId,
-	// 			ERROR_NUMBER() AS ErrorNumber,
-	// 			ERROR_MESSAGE() AS ErrorMessage;
-	// 	END CATCH;
-	// 	`, sqlInsert)
-	// sqlExec := "BEGIN\n" + (*execSql2) + "\nEND"
+	var qr *sql.Row
+	if cntx == nil {
+		qr = ctx.DB.QueryRow(*execSql2, dataInsert.Params...)
+	} else {
+		qr = ctx.DB.QueryRowContext(cntx, *execSql2, dataInsert.Params...)
+	}
 
-	qr := ctx.DB.QueryRow(*execSql2, dataInsert.Params...)
 	if qr.Err() != nil {
+		if dbxErr := parseErrorByMssqlError(cntx, ctx.DB, qr.Err()); dbxErr != nil {
+			return dbxErr
+		}
 		return qr.Err()
 	}
 	err = qr.Scan(&insertedNullId)
 	if err != nil {
+		if dbxErr := parseErrorByMssqlError(cntx, ctx.DB, err); dbxErr != nil {
+			return dbxErr
+		}
 		return err
 	}
 

@@ -79,13 +79,25 @@ func (e *executorMySql) createTable(dbname string, entity interface{}) func(db *
 					} else {
 
 						fmt.Println(red+"SQL: "+reset+sqlCmd.String(), red+"Error: "+reset+err.Error())
-						return mySQlErr
+						return DBXMigrationError{
+							Message: err.Error(),
+							DBName:  dbname,
+							Code:    fmt.Sprintf("%d", mySQlErr.Number), // mysql error code
+							Sql:     sqlCmd.String(),
+							Err:     err,
+						}
 					}
 
 				} else {
 					fmt.Println(red+"SQL: "+reset+sqlCmd.String(), red+"Error: "+reset+err.Error())
 
-					return err
+					return DBXMigrationError{
+						Message: err.Error(),
+						DBName:  dbname,
+						Code:    "unknown", // mysql error code
+						Sql:     sqlCmd.String(),
+						Err:     err,
+					}
 				}
 
 			}

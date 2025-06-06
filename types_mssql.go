@@ -267,12 +267,6 @@ func createMssqlFullTextSearch(e executorMssql, tableName string, field EntityFi
 									ON [%s];
 								END`
 	sqlCreateFullTextIndex = fmt.Sprintf(sqlCreateFullTextIndex, tableName, tableName, field.Name, ui_name, fullTextSearchCatalogName)
-	fmt.Println(sqlCmdAlterTableAddCol)
-	fmt.Println(sqlFullTextSearchCatalog)
-	fmt.Println(sqlCreateUniqueIndex)
-	fmt.Println(sqlCreateFullTextIndex)
-	fmt.Println(sqlCreateFullTextCatalog)
-	fmt.Println(sqlCreateFullTextIndex)
 
 	allSql := []string{
 		sqlCmdAlterTableAddCol,
